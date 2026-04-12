@@ -91,6 +91,13 @@ function renderCallText(tool: PiuxTool, args: Record<string, unknown>): string[]
 	return component.render(200).map((line) => line.trimEnd());
 }
 
+function assertFullCaptureCalls(execCalls: ExecCall[]): void {
+	assert.deepEqual(execCalls.map((call) => [call.command, call.args]), [
+		["tmux", ["-L", "piux", "display-message", "-p", "-t", "piux:pi.0", "#{pane_height}"]],
+		["tmux", ["-L", "piux", "capture-pane", "-pt", "piux:pi.0", "-S", "-"]],
+	]);
+}
+
 void test("syncActive adds and removes piux_client without dropping other tools", (t) => {
 	const { tool, activeTools, artifactRoot } = createExecHarness([]);
 	t.after(() => rmSync(artifactRoot, { recursive: true, force: true }));
@@ -102,31 +109,47 @@ void test("syncActive adds and removes piux_client without dropping other tools"
 	assert.deepEqual(activeTools, ["read", "bash"]);
 });
 
-void test("look screen captures the visible pane and writes an artifact", async (t) => {
+void test("look screen returns visible screen from full-output snapshot and saves full output", async (t) => {
 	const { tool, execCalls, artifactRoot } = createExecHarness([
-		{ stdout: "4\n" },
-		{ stdout: "one\ntwo\nthree\n" },
+		{ stdout: "3\n" },
+		{ stdout: "history-1\nhistory-2\nscreen-1\nscreen-2\nscreen-3\n" },
 	]);
 	t.after(() => rmSync(artifactRoot, { recursive: true, force: true }));
 
 	const result = await runTool(tool, { action: "look", mode: "screen" });
 	const text = result.content[0]?.type === "text" ? result.content[0].text : "";
 
-	assert.deepEqual(execCalls.map((call) => [call.command, call.args]), [
-		["tmux", ["-L", "piux", "display-message", "-p", "-t", "piux:pi.0", "#{pane_height}"]],
-		["tmux", ["-L", "piux", "capture-pane", "-pt", "piux:pi.0", "-S", "-4"]],
-	]);
-	assert.match(text, /one\ntwo\nthree/);
+	assertFullCaptureCalls(execCalls);
+	assert.match(text, /screen-1\nscreen-2\nscreen-3/);
 	assert.match(text, /look-1\.txt/);
-	assert.equal(readFileSync(join(artifactRoot, "look-1.txt"), "utf8"), "one\ntwo\nthree\n");
+	assert.equal(readFileSync(join(artifactRoot, "look-1.txt"), "utf8"),
+		"history-1\nhistory-2\nscreen-1\nscreen-2\nscreen-3\n");
 });
 
-void test("first look diff falls back to full screen and later diff returns changed rows", async (t) => {
+void test("look full_output returns complete tmux scrollback and saves one snapshot", async (t) => {
+	const { tool, execCalls, artifactRoot } = createExecHarness([
+		{ stdout: "2\n" },
+		{ stdout: "history-1\nhistory-2\nscreen-1\nscreen-2\n" },
+	]);
+	t.after(() => rmSync(artifactRoot, { recursive: true, force: true }));
+
+	const result = await runTool(tool, { action: "look", mode: "full_output" });
+	const text = result.content[0]?.type === "text" ? result.content[0].text : "";
+
+	assertFullCaptureCalls(execCalls);
+	assert.match(text, /history-1\nhistory-2\nscreen-1\nscreen-2/);
+	assert.equal(readFileSync(join(artifactRoot, "look-1.txt"), "utf8"),
+		"history-1\nhistory-2\nscreen-1\nscreen-2\n");
+});
+
+void test("look diff compares full output and ignores input area", async (t) => {
 	const { tool, artifactRoot } = createExecHarness([
-		{ stdout: "3\n" },
-		{ stdout: "alpha\nbeta\n" },
-		{ stdout: "3\n" },
-		{ stdout: "alpha\ngamma\n" },
+		{ stdout: "4\n" },
+		{ stdout: "alpha\nbeta\n────────────────\ninput old\nstatus\n" },
+		{ stdout: "4\n" },
+		{ stdout: "alpha\nbeta\n────────────────\ninput new\nstatus\n" },
+		{ stdout: "4\n" },
+		{ stdout: "alpha\ngamma\n────────────────\ninput newer\nstatus\n" },
 	]);
 	t.after(() => rmSync(artifactRoot, { recursive: true, force: true }));
 
@@ -137,15 +160,21 @@ void test("first look diff falls back to full screen and later diff returns chan
 
 	const second = await runTool(tool, { action: "look" });
 	const secondText = second.content[0]?.type === "text" ? second.content[0].text : "";
-	assert.match(secondText, /@@ line 2/);
-	assert.match(secondText, /- beta/);
-	assert.match(secondText, /\+ gamma/);
-	assert.equal(readFileSync(join(artifactRoot, "look-2.txt"), "utf8"), "alpha\ngamma\n");
+	assert.match(secondText, /No output changes\./);
+
+	const third = await runTool(tool, { action: "look" });
+	const thirdText = third.content[0]?.type === "text" ? third.content[0].text : "";
+	assert.match(thirdText, /@@ line 2/);
+	assert.match(thirdText, /- beta/);
+	assert.match(thirdText, /\+ gamma/);
+	assert.equal(readFileSync(join(artifactRoot, "look-3.txt"), "utf8"),
+		"alpha\ngamma\n────────────────\ninput newer\nstatus\n");
 });
 
-void test("look last returns compact tail without writing artifacts", async (t) => {
+void test("look last returns compact tail from full output and saves full-output artifact", async (t) => {
 	const { tool, artifactRoot } = createExecHarness([
-		{ stdout: "\nfirst\n\nsecond\nthird\n" },
+		{ stdout: "3\n" },
+		{ stdout: "\nhistory\nfirst\n\nsecond\nthird\n" },
 	]);
 	t.after(() => rmSync(artifactRoot, { recursive: true, force: true }));
 
@@ -153,7 +182,8 @@ void test("look last returns compact tail without writing artifacts", async (t) 
 	const text = result.content[0]?.type === "text" ? result.content[0].text : "";
 
 	assert.equal(text, "second\nthird");
-	assert.equal(existsSync(join(artifactRoot, "look-1.txt")), false);
+	assert.equal(readFileSync(join(artifactRoot, "look-1.txt"), "utf8"),
+		"\nhistory\nfirst\n\nsecond\nthird\n");
 });
 
 void test("do maps literal text, key names, and enter to tmux send-keys", async (t) => {

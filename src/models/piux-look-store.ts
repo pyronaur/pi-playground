@@ -3,25 +3,30 @@ import { join } from "node:path";
 
 const LOOK_FILE_PATTERN = /^look-(\d+)\.txt$/;
 
+type PiuxSnapshot = {
+	fullOutput: string;
+	paneHeight: number;
+};
+
 export class PiuxLookStore {
 	readonly root: string;
 	#nextId: number | undefined;
-	#previousScreen: string | undefined;
+	#previousSnapshot: PiuxSnapshot | undefined;
 
 	constructor(root = "/tmp/piux/.playground") {
 		this.root = root;
 	}
 
-	getPreviousScreen(): string | undefined {
-		return this.#previousScreen;
+	getPreviousSnapshot(): PiuxSnapshot | undefined {
+		return this.#previousSnapshot;
 	}
 
-	async saveScreen(screen: string): Promise<string> {
+	async saveSnapshot(snapshot: PiuxSnapshot): Promise<string> {
 		await mkdir(this.root, { recursive: true });
 		const id = await this.getNextId();
 		const path = join(this.root, `look-${id}.txt`);
-		await writeFile(path, screen, "utf8");
-		this.#previousScreen = screen;
+		await writeFile(path, snapshot.fullOutput, "utf8");
+		this.#previousSnapshot = snapshot;
 		return path;
 	}
 

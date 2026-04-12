@@ -72,6 +72,43 @@ function getLastLines(text: string, count: number): string {
 	return lines.slice(-count).join("\n");
 }
 
+function getScreenLines(text: string, paneHeight: number): string {
+	const lines = toLines(text);
+	if (lines.length === 0) {
+		return "";
+	}
+
+	return lines.slice(-Math.max(paneHeight, 0)).join("\n");
+}
+
+function isSeparatorLine(line: string): boolean {
+	const trimmed = line.trim();
+	if (trimmed.length < 10) {
+		return false;
+	}
+
+	return /^[-─]+$/u.test(trimmed);
+}
+
+function stripInputArea(text: string, paneHeight: number): string {
+	const lines = toLines(text);
+	if (lines.length === 0) {
+		return "";
+	}
+
+	const start = Math.max(lines.length - Math.max(paneHeight, 0), 0);
+	for (let i = start; i < lines.length; i += 1) {
+		const line = lines[i];
+		if (!line || !isSeparatorLine(line)) {
+			continue;
+		}
+
+		return lines.slice(0, i).join("\n");
+	}
+
+	return trimTrailingBlankLines(text);
+}
+
 function formatDiffHeader(startLine: number, length: number): string {
 	if (length <= 1) {
 		return `@@ line ${startLine}`;
@@ -188,7 +225,7 @@ export class PiuxTool {
 			promptSnippet: "Inspect the fixed piux tmux pane with look, or drive it with do.",
 			promptGuidelines: [
 				"Use `piux_client` only when playground is active.",
-				"Use `look` with default diff for repeated checks, `screen` for a full baseline, and `last` for a compact tail.",
+				"Use `look diff` for full-output changes, `screen` for the visible pane, `full_output` for complete tmux scrollback, and `last` for a compact tail.",
 				"Use `do` to send literal text, named tmux keys, and optional Enter to the fixed piux pane.",
 			],
 			parameters: Type.Object({
@@ -196,7 +233,7 @@ export class PiuxTool {
 					description: "Action to run: `look` or `do`.",
 				}),
 				mode: Type.Optional(Type.String({
-					description: "For `look`: `diff` (default), `screen`, or `last`.",
+					description: "For `look`: `diff` (default), `screen`, `full_output`, or `last`.",
 				})),
 				lines: Type.Optional(Type.Integer({
 					minimum: 1,
@@ -275,32 +312,41 @@ export class PiuxTool {
 		signal: AbortSignal | undefined,
 	) {
 		const mode = params.mode ?? "diff";
+		const snapshot = await this.captureSnapshot(signal);
+		const previous = this.#store.getPreviousSnapshot();
+		const path = await this.#store.saveSnapshot(snapshot);
+
+		if (mode === "full_output") {
+			return toTextResult(`Saved ${path}\n\n${trimTrailingBlankLines(snapshot.fullOutput)}`);
+		}
+
 		if (mode === "screen") {
-			const screen = await this.captureScreen(signal);
-			const path = await this.#store.saveScreen(screen);
+			const screen = getScreenLines(snapshot.fullOutput, snapshot.paneHeight);
 			return toTextResult(`Saved ${path}\n\n${trimTrailingBlankLines(screen)}`);
 		}
 
 		if (mode === "last") {
-			const capture = await this.captureVisible(signal);
 			const lines = params.lines ?? DEFAULT_LAST_LINES;
-			return toTextResult(getLastNonEmptyLines(capture, lines));
+			return toTextResult(getLastNonEmptyLines(snapshot.fullOutput, lines));
 		}
 
 		if (mode !== "diff") {
-			return toTextResult("Error: look mode must be `diff`, `screen`, or `last`", true);
+			return toTextResult(
+				"Error: look mode must be `diff`, `screen`, `full_output`, or `last`",
+				true,
+			);
 		}
 
-		const previous = this.#store.getPreviousScreen();
-		const screen = await this.captureScreen(signal);
-		const path = await this.#store.saveScreen(screen);
 		if (!previous) {
-			return toTextResult(`Saved ${path}\n\n${trimTrailingBlankLines(screen)}`);
+			return toTextResult(`Saved ${path}\n\n${trimTrailingBlankLines(snapshot.fullOutput)}`);
 		}
 
-		const diff = formatScreenDiff(previous, screen);
+		const diff = formatScreenDiff(
+			stripInputArea(previous.fullOutput, previous.paneHeight),
+			stripInputArea(snapshot.fullOutput, snapshot.paneHeight),
+		);
 		if (!diff) {
-			return toTextResult(`Saved ${path}\n\nNo visible screen changes.`);
+			return toTextResult(`Saved ${path}\n\nNo output changes.`);
 		}
 
 		return toTextResult(`Saved ${path}\n\n${diff}`);
@@ -334,12 +380,10 @@ export class PiuxTool {
 		return toTextResult(getDoSummary({ text, keys, enter }));
 	}
 
-	private async captureVisible(signal: AbortSignal | undefined): Promise<string> {
-		const result = await this.runTmux(["capture-pane", "-pt", PIUX_TARGET], signal);
-		return result.stdout;
-	}
-
-	private async captureScreen(signal: AbortSignal | undefined): Promise<string> {
+	private async captureSnapshot(signal: AbortSignal | undefined): Promise<{
+		fullOutput: string;
+		paneHeight: number;
+	}> {
 		const heightResult = await this.runTmux([
 			"display-message",
 			"-p",
@@ -357,9 +401,12 @@ export class PiuxTool {
 			"-pt",
 			PIUX_TARGET,
 			"-S",
-			`-${height}`,
+			"-",
 		], signal);
-		return result.stdout;
+		return {
+			fullOutput: result.stdout,
+			paneHeight: height,
+		};
 	}
 
 	private async runTmux(args: string[], signal: AbortSignal | undefined): Promise<ExecResult> {

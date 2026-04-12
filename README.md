@@ -59,7 +59,8 @@ Large debug payloads are debug artifacts, not session state.
 `RequestDebugger` writes full provider payloads next to the active Pi session file as `<session>.requests.jsonl`.
 If Pi is running without a persisted session file, it falls back to `.pi/playground/*.requests.jsonl` under the current project.
 
-`PiuxTool` writes full `look screen` / `look diff` captures to `/tmp/piux/.playground/look-*.txt`.
+`PiuxTool` writes one full tmux output snapshot per `look` call to `/tmp/piux/.playground/look-*.txt`.
+`look screen`, `look diff`, `look full_output`, and `look last` all share that same saved full-output snapshot.
 
 Docs naming split:
 
@@ -71,7 +72,12 @@ Docs naming split:
 - `leader` then `g` activates playground for current session
 - once active, `leader` then `g` then `r` toggles provider request debugging
 - once active, `piux_client` tool becomes available to the agent
-- `piux_client` `look` supports `diff` (default), `screen`, and `last`
+- `piux_client` `look` supports `diff` (default), `screen`, `full_output`, and `last`
+- every `look` captures full tmux output once, saves that full snapshot, then returns a projection:
+- `screen` returns visible pane-height lines from the latest full snapshot
+- `full_output` returns complete tmux scrollback/output
+- `diff` compares full snapshots after stripping the bottom input area
+- `last` returns the last non-empty lines from the latest full snapshot
 - `piux_client` `do` sends literal text, named tmux keys, and optional Enter to fixed target `piux:pi.0`
 - `Playground` widget stays above the input box on the left while playground is active
 - request logging captures full pre-send provider payloads for Pi inspection
