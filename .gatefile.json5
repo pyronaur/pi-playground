@@ -1,9 +1,44 @@
 {
 	$use: "./node_modules/.bin",
 
-	// This repo has no protected-path review exceptions, so a green gate run should auto-commit.
-	$hooks: {
-		after: "@commit",
+	play_review: {
+		name: "Review scratch play changes",
+		// src/play is disposable experiment space. Never auto-commit it without explicit human approval.
+		match: "src/play/**/*.{js,cjs,mjs}",
+		run: {
+			label: "Review scratch play changes",
+			message: [
+				"Scratch experiments changed under src/play.",
+				"These files stay outside automatic commit flow.",
+			],
+			guidance: [
+				"Review the play diff.",
+				"Re-run gate with --allow-play when manual review is done.",
+			],
+			status: "fail",
+		},
+		suppress: "--allow-play",
+		critical: true,
+	},
+
+	markdown_review: {
+		name: "Review protected markdown",
+		// README stays auto-committable. Other markdown requires explicit human review.
+		match: [["**/*.md", "!README.md", "!**/README.md"]],
+		run: {
+			label: "Review protected markdown",
+			message: [
+				"Protected markdown changed.",
+				"Only README.md is allowed through auto-commit.",
+			],
+			guidance: [
+				"Review the markdown diff.",
+				"Re-run gate with --allow-protected-markdown when review is done.",
+			],
+			status: "fail",
+		},
+		suppress: "--allow-protected-markdown",
+		critical: true,
 	},
 
 	gatefile: {
@@ -65,5 +100,33 @@
 			"package.json",
 		],
 		run: "knip",
+	},
+
+	autocommit: {
+		name: "Autocommit validated safe changes",
+		// Protected paths are blocked by critical review gates above. This gate commits only safe repo surfaces.
+		match: [
+			".gatefile.json5",
+			".gitignore",
+			".jscpd.json",
+			".oxlintrc.json",
+			"dprint.json",
+			"knip.json",
+			"package.json",
+			"package-lock.json",
+			"tsconfig.json",
+			"README.md",
+			"src/index.ts",
+			"src/app/**/*.ts",
+			"src/modules/**/*.ts",
+		],
+		run: {
+			label: "Validated diff ready for commit",
+			message: "Validated diff ready for commit.",
+			status: "pass",
+		},
+		hooks: {
+			after: "@commit",
+		},
 	},
 }

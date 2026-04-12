@@ -66,3 +66,8 @@ If Pi is running without a persisted session file, it falls back to `.pi/playgro
 - `src/modules/*` is TypeScript-only reusable utilities. Keep one clean interaction surface per module.
 - `src/app/*` is TypeScript-only Pi and UI wiring. Compose modules there.
 - `src/index.ts` is boot-only. Keep feature logic out.
+
+## Gate protection rules
+
+- `src/play/*` stays out of automatic commit flow. Gate requires `--allow-play` after manual review.
+- Markdown files are protected except `README.md`. Gate requires `--allow-protected-markdown` after manual review.
