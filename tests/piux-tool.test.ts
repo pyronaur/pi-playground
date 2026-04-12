@@ -73,6 +73,24 @@ function renderResultText(tool: PiuxTool, input: { text: string; expanded?: bool
 	return component.render(120).map((line) => line.trimEnd());
 }
 
+function renderCallText(tool: PiuxTool, args: Record<string, unknown>): string[] {
+	const component = tool.definition.renderCall?.(
+		args,
+		{
+			fg: (_color: string, text: string) => text,
+			bold: (text: string) => text,
+		},
+		{
+			lastComponent: undefined,
+			state: {},
+			invalidate() {},
+			executionStarted: false,
+			isPartial: false,
+		},
+	) as { render(width: number): string[] };
+	return component.render(200).map((line) => line.trimEnd());
+}
+
 void test("syncActive adds and removes piux without dropping other tools", (t) => {
 	const { tool, activeTools, artifactRoot } = createExecHarness([]);
 	t.after(() => rmSync(artifactRoot, { recursive: true, force: true }));
@@ -182,5 +200,22 @@ void test("collapsed render shows only the last 5 lines and expanded shows full 
 		"five",
 		"six",
 		"seven",
+	]);
+});
+
+void test("renderCall shows full piux args in the title", (t) => {
+	const { tool, artifactRoot } = createExecHarness([]);
+	t.after(() => rmSync(artifactRoot, { recursive: true, force: true }));
+
+	assert.deepEqual(renderCallText(tool, { action: "look", mode: "last", lines: 5 }), [
+		"piux action=look mode=last lines=5",
+	]);
+	assert.deepEqual(renderCallText(tool, {
+		action: "do",
+		text: "/reload",
+		keys: ["Escape", "[", "Z"],
+		enter: true,
+	}), [
+		"piux action=do text=\"/reload\" keys=[\"Escape\",\"[\",\"Z\"] enter=true",
 	]);
 });

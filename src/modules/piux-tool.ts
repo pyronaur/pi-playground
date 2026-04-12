@@ -143,6 +143,32 @@ function getDoSummary(input: {
 	return `sent ${parts.join(", ")}`;
 }
 
+function formatCallArgs(params: PiuxToolParams): string {
+	if (params.action === "look") {
+		const parts = [`action=${params.action}`, `mode=${params.mode ?? "diff"}`];
+		if (typeof params.lines === "number") {
+			parts.push(`lines=${params.lines}`);
+		}
+		return parts.join(" ");
+	}
+
+	if (params.action === "do") {
+		const parts = [`action=${params.action}`];
+		if (typeof params.text === "string") {
+			parts.push(`text=${JSON.stringify(params.text)}`);
+		}
+		if (params.keys && params.keys.length > 0) {
+			parts.push(`keys=${JSON.stringify(params.keys)}`);
+		}
+		if (typeof params.enter === "boolean") {
+			parts.push(`enter=${params.enter}`);
+		}
+		return parts.join(" ");
+	}
+
+	return `action=${params.action ?? "unknown"}`;
+}
+
 export class PiuxTool {
 	readonly artifactRoot: string;
 	readonly definition;
@@ -188,6 +214,11 @@ export class PiuxTool {
 				})),
 			}),
 			execute: async (_toolCallId, params, signal) => await this.execute(params, signal),
+			renderCall(args, theme) {
+				const text = theme.fg("toolTitle", theme.bold("piux "))
+					+ theme.fg("muted", formatCallArgs(args));
+				return new Text(text, 0, 0);
+			},
 			renderResult(result, { expanded }, theme) {
 				const textContent = result.content.find((item) => item.type === "text");
 				if (!textContent || textContent.type !== "text") {
