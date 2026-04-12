@@ -72,15 +72,6 @@ function getLastLines(text: string, count: number): string {
 	return lines.slice(-count).join("\n");
 }
 
-function getScreenLines(text: string, paneHeight: number): string {
-	const lines = toLines(text);
-	if (lines.length === 0) {
-		return "";
-	}
-
-	return lines.slice(-Math.max(paneHeight, 0)).join("\n");
-}
-
 function isSeparatorLine(line: string): boolean {
 	const trimmed = line.trim();
 	if (trimmed.length < 10) {
@@ -352,7 +343,7 @@ export class PiuxTool {
 		}
 
 		if (mode === "screen") {
-			const screen = getScreenLines(snapshot.fullOutput, snapshot.paneHeight);
+			const screen = await this.captureVisible(signal);
 			return toTextResult(`Saved ${path}\n\n${trimTrailingBlankLines(screen)}`);
 		}
 
@@ -438,6 +429,11 @@ export class PiuxTool {
 			fullOutput: result.stdout,
 			paneHeight: height,
 		};
+	}
+
+	private async captureVisible(signal: AbortSignal | undefined): Promise<string> {
+		const result = await this.runTmux(["capture-pane", "-pt", PIUX_TARGET], signal);
+		return result.stdout;
 	}
 
 	private async runTmux(args: string[], signal: AbortSignal | undefined): Promise<ExecResult> {

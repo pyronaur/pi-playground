@@ -109,18 +109,23 @@ void test("syncActive adds and removes piux_client without dropping other tools"
 	assert.deepEqual(activeTools, ["read", "bash"]);
 });
 
-void test("look screen returns visible screen from full-output snapshot and saves full output", async (t) => {
+void test("look screen returns visible viewport capture and saves full output", async (t) => {
 	const { tool, execCalls, artifactRoot } = createExecHarness([
 		{ stdout: "3\n" },
 		{ stdout: "history-1\nhistory-2\nscreen-1\nscreen-2\nscreen-3\n" },
+		{ stdout: "visible-1\nvisible-2\nvisible-3\n" },
 	]);
 	t.after(() => rmSync(artifactRoot, { recursive: true, force: true }));
 
 	const result = await runTool(tool, { action: "look", mode: "screen" });
 	const text = result.content[0]?.type === "text" ? result.content[0].text : "";
 
-	assertFullCaptureCalls(execCalls);
-	assert.match(text, /screen-1\nscreen-2\nscreen-3/);
+	assert.deepEqual(execCalls.map((call) => [call.command, call.args]), [
+		["tmux", ["-L", "piux", "display-message", "-p", "-t", "piux:pi.0", "#{pane_height}"]],
+		["tmux", ["-L", "piux", "capture-pane", "-pt", "piux:pi.0", "-S", "-"]],
+		["tmux", ["-L", "piux", "capture-pane", "-pt", "piux:pi.0"]],
+	]);
+	assert.match(text, /visible-1\nvisible-2\nvisible-3/);
 	assert.match(text, /look-1\.txt/);
 	assert.equal(readFileSync(join(artifactRoot, "look-1.txt"), "utf8"),
 		"history-1\nhistory-2\nscreen-1\nscreen-2\nscreen-3\n");
