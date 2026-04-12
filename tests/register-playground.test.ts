@@ -222,7 +222,7 @@ void test("playground is inactive by default and exposes no slash command", asyn
 
 	assert.equal(harness.commands.size, 0);
 	assert.equal(harness.widgets.get("pi-playground"), undefined);
-	assert.equal(harness.activeTools.current.includes("piux"), false);
+	assert.equal(harness.activeTools.current.includes("piux_client"), false);
 
 	const items = harness.getLeaderItems();
 	assert.equal(items.length, 1);
@@ -235,7 +235,7 @@ void test("playground is inactive by default and exposes no slash command", asyn
 	});
 
 	assert.equal(harness.widgets.has("pi-playground"), true);
-	assert.equal(harness.activeTools.current.includes("piux"), true);
+	assert.equal(harness.activeTools.current.includes("piux_client"), true);
 	assert.deepEqual(getLatestState(harness.entries)?.data, {
 		active: true,
 		requestLogging: false,
@@ -251,7 +251,7 @@ void test("active playground reopens as a leader submenu after session reload", 
 	await harness.startSession();
 
 	assert.equal(harness.widgets.has("pi-playground"), true);
-	assert.equal(harness.activeTools.current.includes("piux"), true);
+	assert.equal(harness.activeTools.current.includes("piux_client"), true);
 
 	const submenu = await openPlaygroundSubmenu(harness);
 	assert.equal(submenu?.kind, "playground");

@@ -15,7 +15,7 @@ const PIUX_TOOL_TIMEOUT = 5000;
 const DEFAULT_LAST_LINES = 20;
 const COLLAPSED_RESULT_LINES = 5;
 
-const PIUX_TOOL_NAME = "piux";
+const PIUX_TOOL_NAME = "piux_client";
 
 type PiuxToolHost = Pick<ExtensionAPI, "exec" | "getActiveTools" | "setActiveTools">;
 
@@ -183,11 +183,11 @@ export class PiuxTool {
 		this.artifactRoot = this.#store.root;
 		this.definition = defineTool({
 			name: PIUX_TOOL_NAME,
-			label: "Piux",
+			label: "Piux Client",
 			description: "Inspect and drive the fixed piux tmux session while playground is active.",
 			promptSnippet: "Inspect the fixed piux tmux pane with look, or drive it with do.",
 			promptGuidelines: [
-				"Use `piux` only when playground is active.",
+				"Use `piux_client` only when playground is active.",
 				"Use `look` with default diff for repeated checks, `screen` for a full baseline, and `last` for a compact tail.",
 				"Use `do` to send literal text, named tmux keys, and optional Enter to the fixed piux pane.",
 			],
@@ -215,7 +215,7 @@ export class PiuxTool {
 			}),
 			execute: async (_toolCallId, params, signal) => await this.execute(params, signal),
 			renderCall(args, theme) {
-				const text = theme.fg("toolTitle", theme.bold("piux "))
+				const text = theme.fg("toolTitle", theme.bold("piux_client "))
 					+ theme.fg("muted", formatCallArgs(args));
 				return new Text(text, 0, 0);
 			},

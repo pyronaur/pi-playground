@@ -91,12 +91,12 @@ function renderCallText(tool: PiuxTool, args: Record<string, unknown>): string[]
 	return component.render(200).map((line) => line.trimEnd());
 }
 
-void test("syncActive adds and removes piux without dropping other tools", (t) => {
+void test("syncActive adds and removes piux_client without dropping other tools", (t) => {
 	const { tool, activeTools, artifactRoot } = createExecHarness([]);
 	t.after(() => rmSync(artifactRoot, { recursive: true, force: true }));
 
 	tool.syncActive(true);
-	assert.deepEqual(activeTools, ["read", "bash", "piux"]);
+	assert.deepEqual(activeTools, ["read", "bash", "piux_client"]);
 
 	tool.syncActive(false);
 	assert.deepEqual(activeTools, ["read", "bash"]);
@@ -203,12 +203,12 @@ void test("collapsed render shows only the last 5 lines and expanded shows full 
 	]);
 });
 
-void test("renderCall shows full piux args in the title", (t) => {
+void test("renderCall shows full piux_client args in the title", (t) => {
 	const { tool, artifactRoot } = createExecHarness([]);
 	t.after(() => rmSync(artifactRoot, { recursive: true, force: true }));
 
 	assert.deepEqual(renderCallText(tool, { action: "look", mode: "last", lines: 5 }), [
-		"piux action=look mode=last lines=5",
+		"piux_client action=look mode=last lines=5",
 	]);
 	assert.deepEqual(renderCallText(tool, {
 		action: "do",
@@ -216,6 +216,6 @@ void test("renderCall shows full piux args in the title", (t) => {
 		keys: ["Escape", "[", "Z"],
 		enter: true,
 	}), [
-		"piux action=do text=\"/reload\" keys=[\"Escape\",\"[\",\"Z\"] enter=true",
+		"piux_client action=do text=\"/reload\" keys=[\"Escape\",\"[\",\"Z\"] enter=true",
 	]);
 });
