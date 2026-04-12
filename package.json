@@ -12,6 +12,7 @@
     "extensions": ["./src/index.ts"]
   },
   "scripts": {
+    "test": "node --experimental-strip-types --test tests/*.test.ts",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint --type-aware --tsconfig tsconfig.json .",
     "format": "dprint fmt",

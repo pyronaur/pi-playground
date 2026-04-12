@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 import type {
@@ -137,17 +137,12 @@ export class RequestDebugger {
 		return this.logPath;
 	}
 
-	load(cwd: string): boolean {
-		this.ensureFlagDir(cwd);
-		this.enabled = existsSync(this.getFlagPath(cwd));
-		return this.enabled;
-	}
-
-	onSessionStart(event: SessionStartEvent, ctx: DebugCtx): void {
+	onSessionStart(enabled: boolean, event: SessionStartEvent, ctx: DebugCtx): void {
+		this.enabled = enabled;
 		this.turn = 0;
 		this.logPath = undefined;
 
-		if (!this.load(ctx.cwd)) return;
+		if (!this.enabled) return;
 
 		const date = new Date();
 		const path = this.ensureLogPath(ctx, date);
@@ -163,6 +158,7 @@ export class RequestDebugger {
 	}
 
 	onSessionShutdown(): void {
+		this.enabled = false;
 		this.turn = 0;
 		this.logPath = undefined;
 	}
@@ -171,13 +167,11 @@ export class RequestDebugger {
 		this.turn = event.turnIndex;
 	}
 
-	toggle(ctx: DebugCommandCtx): RequestDebuggerToggleResult {
-		const next = !this.load(ctx.cwd);
-		this.enabled = next;
-		this.writeFlag(ctx.cwd, next);
+	setEnabled(enabled: boolean, ctx: DebugCommandCtx): RequestDebuggerToggleResult {
+		this.enabled = enabled;
 		this.turn = 0;
 
-		if (!next) {
+		if (!enabled) {
 			const path = this.logPath;
 			this.logPath = undefined;
 			this.notify(ctx,
@@ -244,31 +238,6 @@ export class RequestDebugger {
 			payload: event.payload,
 		});
 		this.notify(ctx, this.clip(notifyText, 160));
-	}
-
-	private getFlagDir(cwd: string): string {
-		return join(cwd, ".pi", "playground");
-	}
-
-	private getFlagPath(cwd: string): string {
-		return join(this.getFlagDir(cwd), `${this.name}.enabled`);
-	}
-
-	private ensureFlagDir(cwd: string): void {
-		mkdirSync(this.getFlagDir(cwd), { recursive: true });
-	}
-
-	private writeFlag(cwd: string, enabled: boolean): void {
-		this.ensureFlagDir(cwd);
-
-		if (enabled) {
-			writeFileSync(this.getFlagPath(cwd), "1\n");
-			return;
-		}
-
-		if (existsSync(this.getFlagPath(cwd))) {
-			unlinkSync(this.getFlagPath(cwd));
-		}
 	}
 
 	private ensureLogPath(ctx: Pick<DebugCtx, "cwd" | "sessionManager">, date: Date): string {

@@ -16,8 +16,10 @@ Current runtime shape is package-style TypeScript:
 
 Current modules:
 
-- `src/app/register-playground.ts` - extension event and command wiring
-- `src/app/badge.ts` - overlay badge wiring
+- `src/app/register-playground.ts` - extension event and leader wiring
+- `src/app/pi-leader-event.ts` - local shared-event type guard for `pi-leader`
+- `src/app/widget.ts` - persistent widget above the editor
+- `src/models/playground-session-state.ts` - session-owned playground state model
 - `src/modules/request-debugger.ts` - reusable provider request debug helper
 
 This repo is now a package-style TypeScript base so other local Pi extensions can import selected helpers through normal npm `devDependencies` wiring.
@@ -56,9 +58,12 @@ If Pi is running without a persisted session file, it falls back to `.pi/playgro
 
 ## Current utilities
 
-- `/debug-playground` toggles provider request debugging
-- `Playground` overlay badge marks that request debugging is enabled
+- `leader` then `g` activates playground for current session
+- once active, `leader` then `g` then `r` toggles provider request debugging
+- `Playground` widget stays above the input box on the left while playground is active
 - request logging captures full pre-send provider payloads for Pi inspection
+
+All playground actions are leader-initiated. No slash commands.
 
 ## Architecture rules
 
