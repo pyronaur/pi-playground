@@ -1,0 +1,36 @@
+{
+  "name": "pi-playground",
+  "private": true,
+  "type": "module",
+  "description": "Pi experiment playground and debugging utility package.",
+  "keywords": ["pi-package"],
+  "exports": {
+    "./extension": "./src/index.ts",
+    "./request-debugger": "./src/request-debugger.ts"
+  },
+  "pi": {
+    "extensions": ["./src/index.ts"]
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint --type-aware --tsconfig tsconfig.json .",
+    "format": "dprint fmt",
+    "format:check": "dprint check",
+    "dupes": "jscpd --config .jscpd.json .",
+    "unused": "knip"
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "@mariozechner/pi-coding-agent": "latest",
+    "@types/node": "latest",
+    "dprint": "latest",
+    "jscpd": "latest",
+    "knip": "latest",
+    "oxlint": "latest",
+    "oxlint-plugin-inhuman": "latest",
+    "oxlint-tsgolint": "latest",
+    "typescript": "latest"
+  }
+}
