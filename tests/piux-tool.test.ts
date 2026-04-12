@@ -186,6 +186,32 @@ void test("look diff compares full output, ignores footer chrome, and keeps tran
 		"alpha\n────────────────\nbranch note\n\nG.\n\nH prompt\n\nH.\n\n────────────────\n\n────────────────\n/path\nstatus\n");
 });
 
+void test("look diff keeps raw tty output changes when footer chrome is overwritten", async (t) => {
+	const { tool, artifactRoot } = createExecHarness([
+		{ stdout: "24\n" },
+		{
+			stdout:
+				"\n────────────────────────────────────────────────────────────────────────────────\n\n────────────────────────────────────────────────────────────────────────────────\n/private/tmp/piux\n0.0%/205k (auto)                       (opencode-go) minimax-m2.7 • thinking off\n",
+		},
+		{ stdout: "24\n" },
+		{
+			stdout:
+				"\n────────────────────────────────────────────────────────────────────────────────\nZ001\nZ002────────────────────────────────────────────────────────────────────────────\nZ003vate/tmp/piux\nZ004/205k (auto)                       (opencode-go) minimax-m2.7 • thinking off\nZ005\nZ006\n",
+		},
+	]);
+	t.after(() => rmSync(artifactRoot, { recursive: true, force: true }));
+
+	await runTool(tool, { action: "look" });
+	const second = await runTool(tool, { action: "look" });
+	const text = second.content[0]?.type === "text" ? second.content[0].text : "";
+
+	assert.doesNotMatch(text, /No output changes\./);
+	assert.match(text, /\+ Z001/);
+	assert.match(text, /\+ Z006/);
+	assert.equal(readFileSync(join(artifactRoot, "look-2.txt"), "utf8"),
+		"\n────────────────────────────────────────────────────────────────────────────────\nZ001\nZ002────────────────────────────────────────────────────────────────────────────\nZ003vate/tmp/piux\nZ004/205k (auto)                       (opencode-go) minimax-m2.7 • thinking off\nZ005\nZ006\n");
+});
+
 void test("look last returns compact tail from full output and saves full-output artifact", async (t) => {
 	const { tool, artifactRoot } = createExecHarness([
 		{ stdout: "3\n" },

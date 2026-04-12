@@ -85,15 +85,50 @@ function isTransientStatusLine(line: string): boolean {
 	return /\b(Working|Thinking)\.\.\.$/u.test(line.trim());
 }
 
+function getLastNonEmptyLineIndex(lines: string[]): number {
+	for (let i = lines.length - 1; i >= 0; i -= 1) {
+		if ((lines[i] ?? "").trim().length > 0) {
+			return i;
+		}
+	}
+
+	return -1;
+}
+
+function hasFooterAfterSeparator(
+	lines: string[],
+	separatorIndex: number,
+	lastNonEmpty: number,
+): boolean {
+	const visibleFooter = lines.slice(separatorIndex + 1,
+		Math.min(lastNonEmpty + 1, separatorIndex + 9));
+	const meaningful = visibleFooter.filter((line) =>
+		line.trim().length > 0 && !isSeparatorLine(line)
+	);
+	if (meaningful.length < 2) {
+		return false;
+	}
+
+	return meaningful[0]?.startsWith("/") === true;
+}
+
 function stripInputArea(text: string, _paneHeight: number): string {
 	const lines = toLines(text);
 	if (lines.length === 0) {
 		return "";
 	}
+	const lastNonEmpty = getLastNonEmptyLineIndex(lines);
+	if (lastNonEmpty < 0) {
+		return "";
+	}
+	const searchStart = Math.max(0, lastNonEmpty - 8);
 
 	let footerStart = -1;
-	for (let i = lines.length - 1; i >= 0; i -= 1) {
+	for (let i = lastNonEmpty; i >= searchStart; i -= 1) {
 		if (!isSeparatorLine(lines[i] ?? "")) {
+			continue;
+		}
+		if (!hasFooterAfterSeparator(lines, i, lastNonEmpty)) {
 			continue;
 		}
 
