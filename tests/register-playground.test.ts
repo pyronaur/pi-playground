@@ -62,9 +62,16 @@ function createSharedEvents() {
 function createHarness(options?: { entries?: Entry[] }) {
 	const cwd = mkdtempSync(join(tmpdir(), "pi-playground-"));
 	const commands = new Map<string, unknown>();
+	const tools = new Map<string, any>();
+	const activeTools = { current: ["read", "bash"] };
 	const entries: Entry[] = options?.entries ? [...options.entries] : [{ type: "header", id: "0" }];
 	const widgets = new Map<string, unknown>();
 	const notifications: Array<{ message: string; type?: string }> = [];
+	const execCalls: Array<{
+		command: string;
+		args: string[];
+		options: Record<string, unknown> | undefined;
+	}> = [];
 	let nextEntryId = entries.length;
 	const events = createEvents();
 	const sharedEvents = createSharedEvents();
@@ -103,11 +110,27 @@ function createHarness(options?: { entries?: Entry[] }) {
 
 	const pi = {
 		events: sharedEvents,
+		exec(command: string, args: string[], options?: Record<string, unknown>) {
+			execCalls.push({ command, args, options });
+			return Promise.resolve({ stdout: "", stderr: "", code: 0, killed: false });
+		},
 		on(name: string, handler: (event: unknown, eventCtx: typeof ctx) => unknown) {
 			events.on(name, handler);
 		},
 		registerCommand(name: string, command: unknown) {
 			commands.set(name, command);
+		},
+		registerTool(tool: any) {
+			tools.set(tool.name, tool);
+		},
+		getActiveTools() {
+			return [...activeTools.current];
+		},
+		getAllTools() {
+			return [...tools.values()];
+		},
+		setActiveTools(toolNames: string[]) {
+			activeTools.current = [...toolNames];
 		},
 		appendEntry(customType: string, data?: unknown) {
 			entries.push({
@@ -123,11 +146,14 @@ function createHarness(options?: { entries?: Entry[] }) {
 	register(pi as never);
 
 	return {
+		activeTools,
 		cwd,
 		commands,
 		entries,
+		execCalls,
 		widgets,
 		notifications,
+		tools,
 		startSession: async () => {
 			await events.emit("session_start", { type: "session_start", reason: "resume" }, ctx);
 		},
@@ -196,6 +222,7 @@ void test("playground is inactive by default and exposes no slash command", asyn
 
 	assert.equal(harness.commands.size, 0);
 	assert.equal(harness.widgets.get("pi-playground"), undefined);
+	assert.equal(harness.activeTools.current.includes("piux"), false);
 
 	const items = harness.getLeaderItems();
 	assert.equal(items.length, 1);
@@ -208,6 +235,7 @@ void test("playground is inactive by default and exposes no slash command", asyn
 	});
 
 	assert.equal(harness.widgets.has("pi-playground"), true);
+	assert.equal(harness.activeTools.current.includes("piux"), true);
 	assert.deepEqual(getLatestState(harness.entries)?.data, {
 		active: true,
 		requestLogging: false,
@@ -223,6 +251,7 @@ void test("active playground reopens as a leader submenu after session reload", 
 	await harness.startSession();
 
 	assert.equal(harness.widgets.has("pi-playground"), true);
+	assert.equal(harness.activeTools.current.includes("piux"), true);
 
 	const submenu = await openPlaygroundSubmenu(harness);
 	assert.equal(submenu?.kind, "playground");

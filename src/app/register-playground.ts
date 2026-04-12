@@ -4,6 +4,7 @@ import {
 	PLAYGROUND_STATE_TYPE,
 	PlaygroundSessionState,
 } from "../models/playground-session-state.ts";
+import { PiuxTool } from "../modules/piux-tool.ts";
 import { RequestDebugger } from "../modules/request-debugger.ts";
 
 import { isPiLeaderOpenEvent } from "./pi-leader-event.ts";
@@ -14,10 +15,12 @@ function getRequestLoggingLabel(state: PlaygroundSessionState): string {
 }
 
 export function registerPlayground(pi: ExtensionAPI) {
+	const piuxTool = new PiuxTool(pi);
 	const requestDebugger = new RequestDebugger();
 	let ctx: ExtensionContext | undefined;
 	let state = PlaygroundSessionState.inactive();
 	let offLeader: (() => void) | undefined;
+	pi.registerTool(piuxTool.definition);
 
 	function syncUi(): void {
 		if (!ctx?.hasUI) {
@@ -29,10 +32,15 @@ export function registerPlayground(pi: ExtensionAPI) {
 
 	function setState(next: PlaygroundSessionState): void {
 		const changed = next.active !== state.active || next.requestLogging !== state.requestLogging;
+		const activeChanged = next.active !== state.active;
 		const requestLoggingChanged = next.requestLogging !== state.requestLogging;
 		state = next;
 		if (!changed) {
 			return;
+		}
+
+		if (activeChanged) {
+			piuxTool.syncActive(state.active);
 		}
 
 		pi.appendEntry(PLAYGROUND_STATE_TYPE, state.toData());
@@ -71,6 +79,7 @@ export function registerPlayground(pi: ExtensionAPI) {
 	pi.on("session_start", (event, nextCtx) => {
 		ctx = nextCtx;
 		state = PlaygroundSessionState.load(nextCtx.sessionManager.getEntries());
+		piuxTool.syncActive(state.active);
 		attachLeader();
 		syncUi();
 		requestDebugger.onSessionStart(state.requestLogging, event, nextCtx);
