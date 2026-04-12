@@ -99,6 +99,7 @@ function createHarness(options?: {
 	const activeTools = { current: ["read", "bash"] };
 	const entries: Entry[] = options?.entries ? [...options.entries] : [{ type: "header", id: "0" }];
 	const widgets = new Map<string, unknown>();
+	const customCalls: Array<{ options: Record<string, unknown> | undefined }> = [];
 	const branch = { current: options?.currentBranch ? [...options.currentBranch] : [] as Entry[] };
 	const notifications: Array<{ message: string; type?: string }> = [];
 	const execCalls: Array<{
@@ -123,6 +124,40 @@ function createHarness(options?: {
 			setWidget(key: string, content: unknown) {
 				widgets.set(key, content);
 			},
+			custom(
+				factory: (
+					tui: { requestRender: () => void },
+					theme: unknown,
+					kb: unknown,
+					done: (value: unknown) => void,
+				) => unknown,
+				options?: Record<string, unknown>,
+			) {
+				customCalls.push({ options });
+				factory({ requestRender() {} }, {
+					fg(_color: string, value: string) {
+						return value;
+					},
+					bold(value: string) {
+						return value;
+					},
+				}, undefined, () => {});
+				return Promise.resolve(undefined);
+			},
+		},
+		getSystemPrompt() {
+			return [
+				"Built-in base prompt.",
+				"",
+				"# Project Context",
+				"",
+				`## ${join(cwd, "AGENTS.md")}`,
+				"",
+				"project instructions",
+				"",
+				"Current date: 2026-04-12",
+				`Current working directory: ${cwd}`,
+			].join("\n");
 		},
 		sessionManager: {
 			getBranch() {
@@ -218,6 +253,7 @@ function createHarness(options?: {
 		entries,
 		execCalls,
 		widgets,
+		customCalls,
 		notifications,
 		renderers,
 		setBranch: (nextEntries: Entry[]) => {
@@ -431,6 +467,7 @@ void test("playground is inactive by default and exposes fallback slash commands
 
 	assert.deepEqual([...harness.commands.keys()].sort(), [
 		"playground-activate",
+		"playground-prompt-navigator",
 		"playground-toggle-request-logging",
 	]);
 	assert.equal(harness.widgets.get("pi-playground"), undefined);
@@ -471,6 +508,25 @@ void test("slash command activates inactive playground without leader", async (t
 	});
 });
 
+void test("slash command opens prompt navigator overlay when playground is active", async (t) => {
+	const harness = createActiveHarness();
+	t.after(harness.cleanup);
+
+	await harness.startSession();
+	await harness.runCommand("playground-prompt-navigator");
+
+	assert.equal(harness.customCalls.length, 1);
+	assert.deepEqual(harness.customCalls[0]?.options, {
+		overlay: true,
+		overlayOptions: {
+			anchor: "center",
+			width: "92%",
+			maxHeight: "88%",
+			margin: 1,
+		},
+	});
+});
+
 void test("active playground reopens as a leader submenu after session reload", async (t) => {
 	const harness = createActiveHarness();
 	t.after(harness.cleanup);
@@ -482,7 +538,7 @@ void test("active playground reopens as a leader submenu after session reload", 
 
 	const submenu = await openPlaygroundSubmenu(harness);
 	assert.equal(submenu?.kind, "playground");
-	assert.deepEqual(submenu?.items.map((item) => item.key), ["r"]);
+	assert.deepEqual(submenu?.items.map((item) => item.key), ["p", "r"]);
 });
 
 void test("active playground resume does not duplicate an existing exposure message", async (t) => {
@@ -664,4 +720,18 @@ void test("slash command toggles request logging without leader", async (t) => {
 	);
 	assert.equal(existsSync(join(harness.cwd, ".pi", "playground", "provider-request.enabled")),
 		false);
+});
+
+void test("prompt navigator command warns when playground is inactive", async (t) => {
+	const harness = createHarness();
+	t.after(harness.cleanup);
+
+	await harness.startSession();
+	await harness.runCommand("playground-prompt-navigator");
+
+	assert.equal(harness.customCalls.length, 0);
+	assert.equal(
+		harness.notifications.some((item) => /Activate playground first/.test(item.message)),
+		true,
+	);
 });

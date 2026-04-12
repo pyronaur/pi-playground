@@ -22,6 +22,7 @@ Current modules:
 - `src/models/playground-session-state.ts` - session-owned playground state model
 - `src/models/piux-look-store.ts` - `piux` look artifact numbering and storage
 - `src/modules/piux-tool.ts` - playground-only `piux_client` tool for tmux look/do actions
+- `src/modules/prompt-navigator.ts` - user-only overlay for inspecting effective prompt and active tools
 - `src/modules/request-debugger.ts` - reusable provider request debug helper
 
 This repo is now a package-style TypeScript base so other local Pi extensions can import selected helpers through normal npm `devDependencies` wiring.
@@ -70,7 +71,9 @@ Docs naming split:
 ## Current utilities
 
 - `leader` then `g` activates playground for current session
+- once active, `leader` then `g` then `p` opens prompt navigator overlay
 - once active, `leader` then `g` then `r` toggles provider request debugging
+- slash fallbacks mirror leader actions when `pi-leader` is absent: `/playground-activate`, `/playground-prompt-navigator`, `/playground-toggle-request-logging`
 - once active, `piux_client` tool becomes available to the agent
 - `piux_client` `look` supports `diff` (default), `screen`, `full_output`, and `last`
 - every `look` captures full tmux output once, saves that full snapshot, then returns a projection:
@@ -82,7 +85,7 @@ Docs naming split:
 - `Playground` widget stays above the input box on the left while playground is active
 - request logging captures full pre-send provider payloads for Pi inspection
 
-All playground actions are leader-initiated. No slash commands.
+Leader is primary. Slash fallbacks exist for the same playground actions when `pi-leader` is unavailable.
 
 ## Architecture rules
 

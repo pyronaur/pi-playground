@@ -10,6 +10,7 @@ import {
 	PlaygroundSessionState,
 } from "../models/playground-session-state.ts";
 import { PiuxTool } from "../modules/piux-tool.ts";
+import { PromptNavigator } from "../modules/prompt-navigator.ts";
 import { RequestDebugger } from "../modules/request-debugger.ts";
 
 import { isPiLeaderOpenEvent } from "./pi-leader-event.ts";
@@ -30,6 +31,7 @@ function getExposureLines(message: PlaygroundExposureMessage): string[] {
 
 export function registerPlayground(pi: ExtensionAPI) {
 	const piuxTool = new PiuxTool(pi);
+	const promptNavigator = new PromptNavigator(pi);
 	const requestDebugger = new RequestDebugger();
 	let ctx: ExtensionContext | undefined;
 	let state = PlaygroundSessionState.inactive();
@@ -122,6 +124,20 @@ export function registerPlayground(pi: ExtensionAPI) {
 		return true;
 	}
 
+	async function openPromptNavigator(nextCtx: ExtensionContext | undefined): Promise<boolean> {
+		if (!state.active) {
+			nextCtx?.ui.notify("Activate playground first with /playground-activate", "warning");
+			return false;
+		}
+
+		if (!nextCtx?.hasUI) {
+			return false;
+		}
+
+		await promptNavigator.open(nextCtx);
+		return true;
+	}
+
 	pi.registerCommand("playground-activate", {
 		description: "Activate playground for this session",
 		handler: async (_args, nextCtx) => {
@@ -135,6 +151,14 @@ export function registerPlayground(pi: ExtensionAPI) {
 		handler: async (_args, nextCtx) => {
 			ctx = nextCtx;
 			toggleRequestLogging();
+		},
+	});
+
+	pi.registerCommand("playground-prompt-navigator", {
+		description: "Open the playground prompt navigator",
+		handler: async (_args, nextCtx) => {
+			ctx = nextCtx;
+			await openPromptNavigator(nextCtx);
 		},
 	});
 
@@ -152,6 +176,13 @@ export function registerPlayground(pi: ExtensionAPI) {
 				}
 
 				openSubmenu("playground", [
+					{
+						key: "p",
+						label: "prompt navigator",
+						run: async () => {
+							await openPromptNavigator(ctx);
+						},
+					},
 					{
 						key: "r",
 						label: getRequestLoggingLabel(state),
