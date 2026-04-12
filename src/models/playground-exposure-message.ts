@@ -107,6 +107,12 @@ export class PlaygroundExposureMessage {
 		return this.compactionId === compactionId;
 	}
 
+	matchesContext(message: PlaygroundExposureMessage): boolean {
+		return this.compactionId === message.compactionId
+			&& this.sessionId === message.sessionId
+			&& this.sessionFile === message.sessionFile;
+	}
+
 	toDetails(): PlaygroundExposureInput {
 		return {
 			compactionId: this.compactionId,

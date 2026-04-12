@@ -87,21 +87,21 @@ export function registerPlayground(pi: ExtensionAPI) {
 
 	function ensureExposure(nextCtx: ExtensionContext): void {
 		const branch = nextCtx.sessionManager.getBranch();
-		const compactionId = PlaygroundExposureMessage.getCompactionId(branch);
+		const currentMessage = PlaygroundExposureMessage.create({
+			compactionId: PlaygroundExposureMessage.getCompactionId(branch),
+			sessionId: nextCtx.sessionManager.getSessionId(),
+			sessionFile: nextCtx.sessionManager.getSessionFile(),
+		});
 		for (const entry of branch) {
 			const message = PlaygroundExposureMessage.fromEntry(entry);
-			if (!message?.matchesCompaction(compactionId)) {
+			if (!message?.matchesContext(currentMessage)) {
 				continue;
 			}
 
 			return;
 		}
 
-		pi.sendMessage(PlaygroundExposureMessage.create({
-			compactionId,
-			sessionId: nextCtx.sessionManager.getSessionId(),
-			sessionFile: nextCtx.sessionManager.getSessionFile(),
-		}).toMessage(), { triggerTurn: false });
+		pi.sendMessage(currentMessage.toMessage(), { triggerTurn: false });
 	}
 
 	function attachLeader(): void {

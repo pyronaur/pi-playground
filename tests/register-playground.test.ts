@@ -78,8 +78,15 @@ function createSharedEvents() {
 	};
 }
 
-function createHarness(options?: { entries?: Entry[] }) {
+function createHarness(options?: {
+	entries?: Entry[];
+	sessionId?: string;
+	sessionFile?: string;
+	sessionStart?: { reason: string; previousSessionFile?: string };
+}) {
 	const cwd = mkdtempSync(join(tmpdir(), "pi-playground-"));
+	const sessionId = options?.sessionId ?? "session-123";
+	const sessionFile = options?.sessionFile ?? join(cwd, "session.jsonl");
 	const commands = new Map<string, unknown>();
 	const renderers = new Map<string, unknown>();
 	const tools = new Map<string, any>();
@@ -115,10 +122,10 @@ function createHarness(options?: { entries?: Entry[] }) {
 				return entries;
 			},
 			getSessionId() {
-				return "session-123";
+				return sessionId;
 			},
 			getSessionFile() {
-				return join(cwd, "session.jsonl");
+				return sessionFile;
 			},
 		},
 		modelRegistry: {
@@ -201,7 +208,11 @@ function createHarness(options?: { entries?: Entry[] }) {
 		renderers,
 		tools,
 		startSession: async () => {
-			await events.emit("session_start", { type: "session_start", reason: "resume" }, ctx);
+			await events.emit("session_start", {
+				type: "session_start",
+				reason: options?.sessionStart?.reason ?? "resume",
+				previousSessionFile: options?.sessionStart?.previousSessionFile,
+			}, ctx);
 		},
 		emit: async (name: string, event: unknown) => {
 			await events.emit(name, event, ctx);
@@ -273,13 +284,47 @@ function createActiveHarness() {
 }
 
 function createActiveHarnessWithExposure() {
+	const sessionFile = "/tmp/current/session.jsonl";
 	const exposure = PlaygroundExposureMessage.create({
 		compactionId: "root",
 		sessionId: "session-123",
-		sessionFile: "/tmp/existing/session.jsonl",
+		sessionFile: sessionFile,
 	});
 
 	return createHarness({
+		sessionFile,
+		entries: [
+			{ type: "header", id: "0" },
+			{
+				type: "custom",
+				id: "1",
+				customType: PLAYGROUND_STATE_TYPE,
+				data: { active: true, requestLogging: false },
+			},
+			{
+				type: "custom_message",
+				id: "2",
+				customType: exposure.toMessage().customType,
+				content: exposure.toMessage().content,
+				display: exposure.toMessage().display,
+				details: exposure.toMessage().details,
+			},
+		],
+	});
+}
+
+function createForkedHarnessWithOldExposure() {
+	const previousSessionFile = "/tmp/previous/session.jsonl";
+	const exposure = PlaygroundExposureMessage.create({
+		compactionId: "root",
+		sessionId: "old-session-id",
+		sessionFile: previousSessionFile,
+	});
+
+	return createHarness({
+		sessionId: "new-session-id",
+		sessionFile: "/tmp/current/session.jsonl",
+		sessionStart: { reason: "fork", previousSessionFile },
 		entries: [
 			{ type: "header", id: "0" },
 			{
@@ -363,6 +408,18 @@ void test("active playground resume does not duplicate an existing exposure mess
 	await harness.startSession();
 
 	assert.equal(getExposureMessages(harness.entries).length, 1);
+});
+
+void test("forked active session injects a new exposure message when the session id changes", async (t) => {
+	const harness = createForkedHarnessWithOldExposure();
+	t.after(harness.cleanup);
+
+	await harness.startSession();
+
+	const exposures = getExposureMessages(harness.entries);
+	assert.equal(exposures.length, 2);
+	assert.match(exposures.at(-1)?.content ?? "", /new-session-id/);
+	assert.match(exposures.at(-1)?.content ?? "", /\/tmp\/current\/session\.jsonl/);
 });
 
 void test("activating playground injects one visible exposure message with session metadata", async (t) => {
