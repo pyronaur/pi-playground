@@ -6,7 +6,7 @@
   "keywords": ["pi-package"],
   "exports": {
     "./extension": "./src/index.ts",
-    "./request-debugger": "./src/request-debugger.ts"
+    "./request-debugger": "./src/modules/request-debugger.ts"
   },
   "pi": {
     "extensions": ["./src/index.ts"]

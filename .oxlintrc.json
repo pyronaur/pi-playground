@@ -1,5 +1,9 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "plugins": ["typescript"],
-  "jsPlugins": ["oxlint-plugin-inhuman"]
+  "jsPlugins": ["oxlint-plugin-inhuman"],
+  "ignorePatterns": [
+    "**/node_modules/**",
+    "src/play/**"
+  ]
 }

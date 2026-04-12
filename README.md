@@ -9,8 +9,16 @@
 
 Current runtime shape is package-style TypeScript:
 
-- `src/index.ts` - extension entry
-- `src/request-debugger.ts` - reusable provider request debug helper
+- `src/index.ts` - boot only
+- `src/app/*` - Pi and UI wiring
+- `src/modules/*` - reusable TypeScript utilities with clean public surfaces
+- `src/play/*` - JS-only scratchpad for dirty experiments, excluded from lint and type gates
+
+Current modules:
+
+- `src/app/register-playground.ts` - extension event and command wiring
+- `src/app/badge.ts` - overlay badge wiring
+- `src/modules/request-debugger.ts` - reusable provider request debug helper
 
 This repo is now a package-style TypeScript base so other local Pi extensions can import selected helpers through normal npm `devDependencies` wiring.
 
@@ -33,6 +41,7 @@ If a module is not documented as public, treat it as internal and keep it out of
 ## Internal-only files
 
 - `src/index.ts`
+- `src/app/*`
 
 ## Storage policy
 
@@ -50,3 +59,10 @@ If Pi is running without a persisted session file, it falls back to `.pi/playgro
 - `/debug-playground` toggles provider request debugging
 - `Playground` overlay badge marks that request debugging is enabled
 - request logging captures full pre-send provider payloads for Pi inspection
+
+## Architecture rules
+
+- `src/play/*` is JS-only scratch space. No tests, no types, no lint pressure.
+- `src/modules/*` is TypeScript-only reusable utilities. Keep one clean interaction surface per module.
+- `src/app/*` is TypeScript-only Pi and UI wiring. Compose modules there.
+- `src/index.ts` is boot-only. Keep feature logic out.

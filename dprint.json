@@ -12,7 +12,7 @@
     "!**/coverage/**",
     "!**/out/**"
   ],
-  "excludes": ["**/.git/**", "**/node_modules/**"],
+  "excludes": ["**/.git/**", "**/node_modules/**", "src/play/**"],
   "typescript": {
     "useTabs": true,
     "quoteStyle": "alwaysDouble",

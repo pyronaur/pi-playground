@@ -1,0 +1,69 @@
+{
+	$use: "./node_modules/.bin",
+
+	// This repo has no protected-path review exceptions, so a green gate run should auto-commit.
+	$hooks: {
+		after: "@commit",
+	},
+
+	gatefile: {
+		name: "Validate gatefile",
+		// Gate control files do not belong in other gate selectors. Validate this one directly.
+		match: ".gatefile.json5",
+		run: "gate ls",
+	},
+
+	format: {
+		name: "Check TypeScript formatting",
+		// Dirty experiments in src/play stay outside formatter pressure. Runtime TS stays strict.
+		match: ["src/index.ts", "src/app/**/*.ts", "src/modules/**/*.ts", "dprint.json"],
+		run: "dprint check",
+	},
+
+	lint: {
+		name: "Lint app and module TypeScript",
+		// src/play is JS scratch space and is ignored by lint config on purpose.
+		match: [
+			"src/index.ts",
+			"src/app/**/*.ts",
+			"src/modules/**/*.ts",
+			".oxlintrc.json",
+			"tsconfig.json",
+		],
+		run: "oxlint --type-aware --tsconfig tsconfig.json .",
+	},
+
+	typecheck: {
+		name: "Typecheck app and module TypeScript",
+		// Only TypeScript runtime surfaces participate here. src/play has no type contract.
+		match: ["src/index.ts", "src/app/**/*.ts", "src/modules/**/*.ts", "tsconfig.json"],
+		run: "tsc --noEmit",
+	},
+
+	dupes: {
+		name: "Detect duplication across app, modules, and play",
+		// Keep duplication pressure on reusable code and scratch experiments alike.
+		match: [
+			"src/index.ts",
+			"src/app/**/*.ts",
+			"src/modules/**/*.ts",
+			"src/play/**/*.{js,cjs,mjs}",
+			".jscpd.json",
+		],
+		run: "jscpd --config .jscpd.json .",
+	},
+
+	unused: {
+		name: "Check unused TypeScript code and package usage",
+		// Knip covers exported TS surfaces and package metadata. src/play stays outside that contract.
+		match: [
+			"src/index.ts",
+			"src/app/**/*.ts",
+			"src/modules/**/*.ts",
+			"knip.json",
+			"tsconfig.json",
+			"package.json",
+		],
+		run: "knip",
+	},
+}
