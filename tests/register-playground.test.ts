@@ -80,6 +80,7 @@ function createSharedEvents() {
 
 function createHarness(options?: {
 	entries?: Entry[];
+	currentBranch?: Entry[];
 	sessionId?: string;
 	sessionFile?: string;
 	sessionStart?: { reason: string; previousSessionFile?: string };
@@ -93,6 +94,7 @@ function createHarness(options?: {
 	const activeTools = { current: ["read", "bash"] };
 	const entries: Entry[] = options?.entries ? [...options.entries] : [{ type: "header", id: "0" }];
 	const widgets = new Map<string, unknown>();
+	const branch = { current: options?.currentBranch ? [...options.currentBranch] : [] as Entry[] };
 	const notifications: Array<{ message: string; type?: string }> = [];
 	const execCalls: Array<{
 		command: string;
@@ -102,6 +104,9 @@ function createHarness(options?: {
 	let nextEntryId = entries.length;
 	const events = createEvents();
 	const sharedEvents = createSharedEvents();
+	if (branch.current.length === 0) {
+		branch.current = entries.filter((entry) => entry.type !== "header");
+	}
 
 	const ctx = {
 		hasUI: true,
@@ -116,7 +121,7 @@ function createHarness(options?: {
 		},
 		sessionManager: {
 			getBranch() {
-				return entries.filter((entry) => entry.type !== "header");
+				return [...branch.current];
 			},
 			getEntries() {
 				return entries;
@@ -169,12 +174,14 @@ function createHarness(options?: {
 			activeTools.current = [...toolNames];
 		},
 		appendEntry(customType: string, data?: unknown) {
-			entries.push({
+			const entry = {
 				type: "custom",
 				id: String(nextEntryId),
 				customType,
 				data,
-			});
+			} satisfies Extract<Entry, { type: "custom" }>;
+			entries.push(entry);
+			branch.current.push(entry);
 			nextEntryId += 1;
 		},
 		sendMessage(message: {
@@ -183,14 +190,16 @@ function createHarness(options?: {
 			display: boolean;
 			details?: unknown;
 		}) {
-			entries.push({
+			const entry = {
 				type: "custom_message",
 				id: String(nextEntryId),
 				customType: message.customType,
 				content: message.content,
 				display: message.display,
 				details: message.details,
-			});
+			} satisfies Extract<Entry, { type: "custom_message" }>;
+			entries.push(entry);
+			branch.current.push(entry);
 			nextEntryId += 1;
 		},
 	};
@@ -206,6 +215,9 @@ function createHarness(options?: {
 		widgets,
 		notifications,
 		renderers,
+		setBranch: (nextEntries: Entry[]) => {
+			branch.current = [...nextEntries];
+		},
 		tools,
 		startSession: async () => {
 			await events.emit("session_start", {
@@ -345,6 +357,51 @@ function createForkedHarnessWithOldExposure() {
 	});
 }
 
+function createTreeNavigationHarness() {
+	const staleExposure = PlaygroundExposureMessage.create({
+		compactionId: "root",
+		sessionId: "old-session-id",
+		sessionFile: "/tmp/old/session.jsonl",
+	});
+	const currentExposure = PlaygroundExposureMessage.create({
+		compactionId: "root",
+		sessionId: "current-session-id",
+		sessionFile: "/tmp/current/session.jsonl",
+	});
+	const entries: Entry[] = [
+		{ type: "header", id: "0" },
+		{
+			type: "custom",
+			id: "1",
+			customType: PLAYGROUND_STATE_TYPE,
+			data: { active: true, requestLogging: false },
+		},
+		{
+			type: "custom_message",
+			id: "2",
+			customType: staleExposure.toMessage().customType,
+			content: staleExposure.toMessage().content,
+			display: staleExposure.toMessage().display,
+			details: staleExposure.toMessage().details,
+		},
+		{
+			type: "custom_message",
+			id: "3",
+			customType: currentExposure.toMessage().customType,
+			content: currentExposure.toMessage().content,
+			display: currentExposure.toMessage().display,
+			details: currentExposure.toMessage().details,
+		},
+	];
+
+	return createHarness({
+		entries,
+		sessionId: "current-session-id",
+		sessionFile: "/tmp/current/session.jsonl",
+		currentBranch: entries.slice(1),
+	});
+}
+
 async function openPlaygroundSubmenu(harness: ReturnType<typeof createHarness>) {
 	const items = harness.getLeaderItems();
 	let submenu: { kind: string; items: LeaderItem[] } | undefined;
@@ -422,6 +479,26 @@ void test("forked active session injects a new exposure message when the session
 	assert.match(exposures.at(-1)?.content ?? "", /\/tmp\/current\/session\.jsonl/);
 });
 
+void test("tree navigation injects the current session exposure on the new branch", async (t) => {
+	const harness = createTreeNavigationHarness();
+	t.after(harness.cleanup);
+
+	await harness.startSession();
+	assert.equal(getExposureMessages(harness.entries).length, 2);
+
+	harness.setBranch(harness.entries.filter((entry) => entry.id === "1" || entry.id === "2"));
+	await harness.emit("session_tree", {
+		type: "session_tree",
+		newLeafId: "1",
+		oldLeafId: "3",
+	});
+
+	const exposures = getExposureMessages(harness.entries);
+	assert.equal(exposures.length, 3);
+	assert.match(exposures.at(-1)?.content ?? "", /current-session-id/);
+	assert.match(exposures.at(-1)?.content ?? "", /\/tmp\/current\/session\.jsonl/);
+});
+
 void test("activating playground injects one visible exposure message with session metadata", async (t) => {
 	const harness = createHarness();
 	t.after(harness.cleanup);
@@ -459,6 +536,7 @@ void test("active playground re-injects once after compaction", async (t) => {
 		firstKeptEntryId: "1",
 		tokensBefore: 100,
 	});
+	harness.setBranch(harness.entries.filter((entry) => entry.type !== "header"));
 
 	await harness.emit("session_compact", {
 		type: "session_compact",

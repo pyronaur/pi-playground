@@ -150,6 +150,14 @@ export function registerPlayground(pi: ExtensionAPI) {
 		ensureExposure(nextCtx);
 	});
 
+	pi.on("session_tree", (_event, nextCtx) => {
+		if (!state.active) {
+			return;
+		}
+
+		ensureExposure(nextCtx);
+	});
+
 	pi.on("turn_start", (event) => {
 		requestDebugger.onTurnStart(event);
 	});
