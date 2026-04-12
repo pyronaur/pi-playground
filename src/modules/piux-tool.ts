@@ -90,23 +90,54 @@ function isSeparatorLine(line: string): boolean {
 	return /^[-─]+$/u.test(trimmed);
 }
 
-function stripInputArea(text: string, paneHeight: number): string {
+function isTransientStatusLine(line: string): boolean {
+	return /\b(Working|Thinking)\.\.\.$/u.test(line.trim());
+}
+
+function stripInputArea(text: string, _paneHeight: number): string {
 	const lines = toLines(text);
 	if (lines.length === 0) {
 		return "";
 	}
 
-	const start = Math.max(lines.length - Math.max(paneHeight, 0), 0);
-	for (let i = start; i < lines.length; i += 1) {
-		const line = lines[i];
-		if (!line || !isSeparatorLine(line)) {
+	let footerStart = -1;
+	for (let i = lines.length - 1; i >= 0; i -= 1) {
+		if (!isSeparatorLine(lines[i] ?? "")) {
 			continue;
 		}
 
-		return lines.slice(0, i).join("\n");
+		footerStart = i;
+		for (let j = i - 1; j >= 0; j -= 1) {
+			const line = lines[j] ?? "";
+			if (line.trim().length > 0 && !isSeparatorLine(line)) {
+				break;
+			}
+
+			if (isSeparatorLine(line)) {
+				footerStart = j;
+			}
+		}
+		break;
 	}
 
-	return trimTrailingBlankLines(text);
+	if (footerStart < 0) {
+		return trimTrailingBlankLines(text);
+	}
+
+	let start = footerStart;
+	for (let i = footerStart - 1; i >= 0; i -= 1) {
+		const line = lines[i] ?? "";
+		if (line.trim().length === 0) {
+			continue;
+		}
+
+		if (isTransientStatusLine(line)) {
+			start = i;
+		}
+		break;
+	}
+
+	return lines.slice(0, start).join("\n");
 }
 
 function formatDiffHeader(startLine: number, length: number): string {

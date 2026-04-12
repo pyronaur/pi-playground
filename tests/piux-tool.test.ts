@@ -142,33 +142,43 @@ void test("look full_output returns complete tmux scrollback and saves one snaps
 		"history-1\nhistory-2\nscreen-1\nscreen-2\n");
 });
 
-void test("look diff compares full output and ignores input area", async (t) => {
+void test("look diff compares full output, ignores footer chrome, and keeps transcript after earlier separators", async (t) => {
 	const { tool, artifactRoot } = createExecHarness([
-		{ stdout: "4\n" },
-		{ stdout: "alpha\nbeta\n────────────────\ninput old\nstatus\n" },
-		{ stdout: "4\n" },
-		{ stdout: "alpha\nbeta\n────────────────\ninput new\nstatus\n" },
-		{ stdout: "4\n" },
-		{ stdout: "alpha\ngamma\n────────────────\ninput newer\nstatus\n" },
+		{ stdout: "80\n" },
+		{
+			stdout:
+				"alpha\n────────────────\nbranch note\n\nG.\n\n────────────────\n\n────────────────\n/path\nstatus\n",
+		},
+		{ stdout: "80\n" },
+		{
+			stdout:
+				"alpha\n────────────────\nbranch note\n\nG.\n\nH prompt\n\n ⠴ Working...\n\n────────────────\n\n────────────────\n/path\nstatus\n",
+		},
+		{ stdout: "80\n" },
+		{
+			stdout:
+				"alpha\n────────────────\nbranch note\n\nG.\n\nH prompt\n\nH.\n\n────────────────\n\n────────────────\n/path\nstatus\n",
+		},
 	]);
 	t.after(() => rmSync(artifactRoot, { recursive: true, force: true }));
 
 	const first = await runTool(tool, { action: "look" });
 	const firstText = first.content[0]?.type === "text" ? first.content[0].text : "";
-	assert.match(firstText, /alpha\nbeta/);
+	assert.match(firstText, /alpha/);
 	assert.equal(existsSync(join(artifactRoot, "look-1.txt")), true);
 
 	const second = await runTool(tool, { action: "look" });
 	const secondText = second.content[0]?.type === "text" ? second.content[0].text : "";
-	assert.match(secondText, /No output changes\./);
+	assert.match(secondText, /@@ line 7/);
+	assert.match(secondText, /\+ H prompt/);
+	assert.doesNotMatch(secondText, /Working/);
 
 	const third = await runTool(tool, { action: "look" });
 	const thirdText = third.content[0]?.type === "text" ? third.content[0].text : "";
-	assert.match(thirdText, /@@ line 2/);
-	assert.match(thirdText, /- beta/);
-	assert.match(thirdText, /\+ gamma/);
+	assert.match(thirdText, /@@ line 9/);
+	assert.match(thirdText, /\+ H\./);
 	assert.equal(readFileSync(join(artifactRoot, "look-3.txt"), "utf8"),
-		"alpha\ngamma\n────────────────\ninput newer\nstatus\n");
+		"alpha\n────────────────\nbranch note\n\nG.\n\nH prompt\n\nH.\n\n────────────────\n\n────────────────\n/path\nstatus\n");
 });
 
 void test("look last returns compact tail from full output and saves full-output artifact", async (t) => {
