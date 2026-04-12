@@ -57,6 +57,22 @@ async function runTool(
 	);
 }
 
+function renderResultText(tool: PiuxTool, input: { text: string; expanded?: boolean }): string[] {
+	const component = tool.definition.renderResult?.(
+		{
+			content: [{ type: "text", text: input.text }],
+			details: {},
+			isError: false,
+		},
+		{ isPartial: false, expanded: input.expanded ?? false },
+		{
+			fg: (_color: string, text: string) => text,
+			bold: (text: string) => text,
+		},
+	) as { render(width: number): string[] };
+	return component.render(120).map((line) => line.trimEnd());
+}
+
 void test("syncActive adds and removes piux without dropping other tools", (t) => {
 	const { tool, activeTools, artifactRoot } = createExecHarness([]);
 	t.after(() => rmSync(artifactRoot, { recursive: true, force: true }));
@@ -144,4 +160,27 @@ void test("do maps literal text, key names, and enter to tmux send-keys", async 
 		["tmux", ["-L", "piux", "send-keys", "-t", "piux:pi.0", "Enter"]],
 	]);
 	assert.match(text, /sent text, keys, enter/);
+});
+
+void test("collapsed render shows only the last 5 lines and expanded shows full output", (t) => {
+	const { tool, artifactRoot } = createExecHarness([]);
+	t.after(() => rmSync(artifactRoot, { recursive: true, force: true }));
+
+	const output = "one\ntwo\nthree\nfour\nfive\nsix\nseven";
+	assert.deepEqual(renderResultText(tool, { text: output }), [
+		"three",
+		"four",
+		"five",
+		"six",
+		"seven",
+	]);
+	assert.deepEqual(renderResultText(tool, { text: output, expanded: true }), [
+		"one",
+		"two",
+		"three",
+		"four",
+		"five",
+		"six",
+		"seven",
+	]);
 });

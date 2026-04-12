@@ -4,6 +4,7 @@ import {
 	type ExecResult,
 	type ExtensionAPI,
 } from "@mariozechner/pi-coding-agent";
+import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
 import { PiuxLookStore } from "../models/piux-look-store.ts";
@@ -12,6 +13,7 @@ const PIUX_SOCKET = "piux";
 const PIUX_TARGET = "piux:pi.0";
 const PIUX_TOOL_TIMEOUT = 5000;
 const DEFAULT_LAST_LINES = 20;
+const COLLAPSED_RESULT_LINES = 5;
 
 const PIUX_TOOL_NAME = "piux";
 
@@ -56,6 +58,15 @@ function getLastNonEmptyLines(text: string, count: number): string {
 	const lines = text.split(/\r?\n/u).filter((line) => line.trim().length > 0);
 	if (lines.length === 0) {
 		return "(no non-empty lines)";
+	}
+
+	return lines.slice(-count).join("\n");
+}
+
+function getLastLines(text: string, count: number): string {
+	const lines = toLines(text);
+	if (lines.length === 0) {
+		return "";
 	}
 
 	return lines.slice(-count).join("\n");
@@ -177,6 +188,22 @@ export class PiuxTool {
 				})),
 			}),
 			execute: async (_toolCallId, params, signal) => await this.execute(params, signal),
+			renderResult(result, { expanded }, theme) {
+				const textContent = result.content.find((item) => item.type === "text");
+				if (!textContent || textContent.type !== "text") {
+					return new Text("", 0, 0);
+				}
+
+				const text = expanded
+					? trimTrailingBlankLines(textContent.text)
+					: getLastLines(textContent.text, COLLAPSED_RESULT_LINES);
+				if (!text) {
+					return new Text("", 0, 0);
+				}
+
+				const output = text.split("\n").map((line) => theme.fg("toolOutput", line)).join("\n");
+				return new Text(output, 0, 0);
+			},
 		});
 	}
 

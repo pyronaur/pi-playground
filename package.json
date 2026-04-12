@@ -25,6 +25,7 @@
   },
   "devDependencies": {
     "@mariozechner/pi-coding-agent": "latest",
+    "@mariozechner/pi-tui": "latest",
     "@sinclair/typebox": "^0.34.41",
     "@types/node": "latest",
     "dprint": "latest",
