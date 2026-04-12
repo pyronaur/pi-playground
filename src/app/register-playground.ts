@@ -1,5 +1,10 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { Box, Text } from "@mariozechner/pi-tui";
 
+import {
+	PLAYGROUND_EXPOSURE_TYPE,
+	PlaygroundExposureMessage,
+} from "../models/playground-exposure-message.ts";
 import {
 	PLAYGROUND_STATE_TYPE,
 	PlaygroundSessionState,
@@ -14,6 +19,15 @@ function getRequestLoggingLabel(state: PlaygroundSessionState): string {
 	return state.requestLogging ? "toggle request logging (on)" : "toggle request logging";
 }
 
+function getExposureLines(message: PlaygroundExposureMessage): string[] {
+	return [
+		message.title,
+		`Session ID: ${message.sessionId}`,
+		`Session file: ${message.sessionFile}`,
+		`Runbook: ${message.runbook}`,
+	];
+}
+
 export function registerPlayground(pi: ExtensionAPI) {
 	const piuxTool = new PiuxTool(pi);
 	const requestDebugger = new RequestDebugger();
@@ -21,6 +35,24 @@ export function registerPlayground(pi: ExtensionAPI) {
 	let state = PlaygroundSessionState.inactive();
 	let offLeader: (() => void) | undefined;
 	pi.registerTool(piuxTool.definition);
+	pi.registerMessageRenderer(PLAYGROUND_EXPOSURE_TYPE, (message, { expanded }, theme) => {
+		const exposure = PlaygroundExposureMessage.fromUnknown(message.details);
+		const lines = exposure
+			? getExposureLines(exposure)
+			: [typeof message.content === "string" ? message.content : PLAYGROUND_EXPOSURE_TYPE];
+		const visibleLines = expanded || lines.length <= 3
+			? lines
+			: [...lines.slice(0, 3), "..."];
+		const styled = visibleLines.map((line, index) => {
+			const color = index === 0 ? "customMessageLabel" : "customMessageText";
+			const text = index === 0 ? theme.bold(line) : line;
+			return theme.fg(color, text);
+		}).join("\n");
+
+		const box = new Box(1, 1, (value) => theme.bg("customMessageBg", value));
+		box.addChild(new Text(styled, 0, 0));
+		return box;
+	});
 
 	function syncUi(): void {
 		if (!ctx?.hasUI) {
@@ -48,6 +80,28 @@ export function registerPlayground(pi: ExtensionAPI) {
 		if (requestLoggingChanged && ctx) {
 			requestDebugger.setEnabled(state.requestLogging, ctx);
 		}
+		if (activeChanged && state.active && ctx) {
+			ensureExposure(ctx);
+		}
+	}
+
+	function ensureExposure(nextCtx: ExtensionContext): void {
+		const branch = nextCtx.sessionManager.getBranch();
+		const compactionId = PlaygroundExposureMessage.getCompactionId(branch);
+		for (const entry of branch) {
+			const message = PlaygroundExposureMessage.fromEntry(entry);
+			if (!message?.matchesCompaction(compactionId)) {
+				continue;
+			}
+
+			return;
+		}
+
+		pi.sendMessage(PlaygroundExposureMessage.create({
+			compactionId,
+			sessionId: nextCtx.sessionManager.getSessionId(),
+			sessionFile: nextCtx.sessionManager.getSessionFile(),
+		}).toMessage(), { triggerTurn: false });
 	}
 
 	function attachLeader(): void {
@@ -83,6 +137,17 @@ export function registerPlayground(pi: ExtensionAPI) {
 		attachLeader();
 		syncUi();
 		requestDebugger.onSessionStart(state.requestLogging, event, nextCtx);
+		if (state.active) {
+			ensureExposure(nextCtx);
+		}
+	});
+
+	pi.on("session_compact", (_event, nextCtx) => {
+		if (!state.active) {
+			return;
+		}
+
+		ensureExposure(nextCtx);
 	});
 
 	pi.on("turn_start", (event) => {

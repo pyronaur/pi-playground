@@ -5,11 +5,30 @@ import { join } from "node:path";
 import test from "node:test";
 
 import register from "../src/index.ts";
+import {
+	PLAYGROUND_EXPOSURE_TYPE,
+	PlaygroundExposureMessage,
+} from "../src/models/playground-exposure-message.ts";
 import { PLAYGROUND_STATE_TYPE } from "../src/models/playground-session-state.ts";
 
 type Entry =
 	| { type: "header"; id: string }
-	| { type: "custom"; id: string; customType: string; data?: unknown };
+	| { type: "custom"; id: string; customType: string; data?: unknown }
+	| {
+		type: "custom_message";
+		id: string;
+		customType: string;
+		content: string;
+		display: boolean;
+		details?: unknown;
+	}
+	| {
+		type: "compaction";
+		id: string;
+		summary: string;
+		firstKeptEntryId: string;
+		tokensBefore: number;
+	};
 
 type LeaderActionContext = {
 	openSubmenu: (kind: string, items: LeaderItem[]) => void;
@@ -62,6 +81,7 @@ function createSharedEvents() {
 function createHarness(options?: { entries?: Entry[] }) {
 	const cwd = mkdtempSync(join(tmpdir(), "pi-playground-"));
 	const commands = new Map<string, unknown>();
+	const renderers = new Map<string, unknown>();
 	const tools = new Map<string, any>();
 	const activeTools = { current: ["read", "bash"] };
 	const entries: Entry[] = options?.entries ? [...options.entries] : [{ type: "header", id: "0" }];
@@ -88,8 +108,14 @@ function createHarness(options?: { entries?: Entry[] }) {
 			},
 		},
 		sessionManager: {
+			getBranch() {
+				return entries.filter((entry) => entry.type !== "header");
+			},
 			getEntries() {
 				return entries;
+			},
+			getSessionId() {
+				return "session-123";
 			},
 			getSessionFile() {
 				return join(cwd, "session.jsonl");
@@ -117,6 +143,9 @@ function createHarness(options?: { entries?: Entry[] }) {
 		on(name: string, handler: (event: unknown, eventCtx: typeof ctx) => unknown) {
 			events.on(name, handler);
 		},
+		registerMessageRenderer(customType: string, renderer: unknown) {
+			renderers.set(customType, renderer);
+		},
 		registerCommand(name: string, command: unknown) {
 			commands.set(name, command);
 		},
@@ -141,6 +170,22 @@ function createHarness(options?: { entries?: Entry[] }) {
 			});
 			nextEntryId += 1;
 		},
+		sendMessage(message: {
+			customType: string;
+			content: string;
+			display: boolean;
+			details?: unknown;
+		}) {
+			entries.push({
+				type: "custom_message",
+				id: String(nextEntryId),
+				customType: message.customType,
+				content: message.content,
+				display: message.display,
+				details: message.details,
+			});
+			nextEntryId += 1;
+		},
 	};
 
 	register(pi as never);
@@ -153,6 +198,7 @@ function createHarness(options?: { entries?: Entry[] }) {
 		execCalls,
 		widgets,
 		notifications,
+		renderers,
 		tools,
 		startSession: async () => {
 			await events.emit("session_start", { type: "session_start", reason: "resume" }, ctx);
@@ -180,6 +226,30 @@ function createHarness(options?: { entries?: Entry[] }) {
 	};
 }
 
+function getExposureMessages(entries: Entry[]) {
+	return entries.filter((entry): entry is Extract<Entry, { type: "custom_message" }> => {
+		return entry.type === "custom_message" && entry.customType === PLAYGROUND_EXPOSURE_TYPE;
+	});
+}
+
+function renderMessageText(
+	renderer: (
+		message: any,
+		options: { expanded: boolean },
+		theme: any,
+	) => { render: (width: number) => string[] },
+	message: { content: string; details: unknown },
+	expanded = false,
+) {
+	return renderer(message, { expanded }, {
+		fg: (_color: string, text: string) => text,
+		bg: (_color: string, text: string) => text,
+		bold: (text: string) => text,
+	}).render(120)
+		.map((line) => line.trim())
+		.filter((line) => line.length > 0);
+}
+
 function getLatestState(entries: Entry[]) {
 	return [...entries]
 		.reverse()
@@ -197,6 +267,34 @@ function createActiveHarness() {
 				id: "1",
 				customType: PLAYGROUND_STATE_TYPE,
 				data: { active: true, requestLogging: false },
+			},
+		],
+	});
+}
+
+function createActiveHarnessWithExposure() {
+	const exposure = PlaygroundExposureMessage.create({
+		compactionId: "root",
+		sessionId: "session-123",
+		sessionFile: "/tmp/existing/session.jsonl",
+	});
+
+	return createHarness({
+		entries: [
+			{ type: "header", id: "0" },
+			{
+				type: "custom",
+				id: "1",
+				customType: PLAYGROUND_STATE_TYPE,
+				data: { active: true, requestLogging: false },
+			},
+			{
+				type: "custom_message",
+				id: "2",
+				customType: exposure.toMessage().customType,
+				content: exposure.toMessage().content,
+				display: exposure.toMessage().display,
+				details: exposure.toMessage().details,
 			},
 		],
 	});
@@ -256,6 +354,99 @@ void test("active playground reopens as a leader submenu after session reload", 
 	const submenu = await openPlaygroundSubmenu(harness);
 	assert.equal(submenu?.kind, "playground");
 	assert.deepEqual(submenu?.items.map((item) => item.key), ["r"]);
+});
+
+void test("active playground resume does not duplicate an existing exposure message", async (t) => {
+	const harness = createActiveHarnessWithExposure();
+	t.after(harness.cleanup);
+
+	await harness.startSession();
+
+	assert.equal(getExposureMessages(harness.entries).length, 1);
+});
+
+void test("activating playground injects one visible exposure message with session metadata", async (t) => {
+	const harness = createHarness();
+	t.after(harness.cleanup);
+
+	await harness.startSession();
+
+	const items = harness.getLeaderItems();
+	await items[0]?.run({
+		openSubmenu() {
+			throw new Error("inactive playground should activate, not open submenu");
+		},
+	});
+
+	const exposures = getExposureMessages(harness.entries);
+	assert.equal(exposures.length, 1);
+	assert.equal(exposures[0]?.display, true);
+	assert.match(exposures[0]?.content ?? "", /session-123/);
+	assert.match(exposures[0]?.content ?? "", /session\.jsonl/);
+	assert.match(exposures[0]?.content ?? "", /@docs\/piux\.md/);
+	assert.equal(harness.renderers.has(PLAYGROUND_EXPOSURE_TYPE), true);
+});
+
+void test("active playground re-injects once after compaction", async (t) => {
+	const harness = createActiveHarness();
+	t.after(harness.cleanup);
+
+	await harness.startSession();
+
+	assert.equal(getExposureMessages(harness.entries).length, 1);
+
+	harness.entries.push({
+		type: "compaction",
+		id: String(harness.entries.length),
+		summary: "summary",
+		firstKeptEntryId: "1",
+		tokensBefore: 100,
+	});
+
+	await harness.emit("session_compact", {
+		type: "session_compact",
+		compactionEntry: harness.entries.at(-1),
+		fromExtension: false,
+	});
+
+	assert.equal(getExposureMessages(harness.entries).length, 2);
+	await harness.emit("session_compact", {
+		type: "session_compact",
+		compactionEntry: harness.entries.at(-2),
+		fromExtension: false,
+	});
+	assert.equal(getExposureMessages(harness.entries).length, 2);
+});
+
+void test("exposure message renderer collapses to 3 lines and expands to the full body", async (t) => {
+	const harness = createHarness();
+	t.after(harness.cleanup);
+
+	await harness.startSession();
+
+	const renderer = harness.renderers.get(PLAYGROUND_EXPOSURE_TYPE);
+	assert.equal(typeof renderer, "function");
+
+	const exposure = PlaygroundExposureMessage.create({
+		compactionId: "root",
+		sessionId: "session-123",
+		sessionFile: join(harness.cwd, "session.jsonl"),
+	});
+	const collapsed = renderMessageText(renderer as never, exposure.toMessage());
+	const expanded = renderMessageText(renderer as never, exposure.toMessage(), true);
+
+	assert.deepEqual(collapsed, [
+		"Playground session context",
+		"Session ID: session-123",
+		`Session file: ${join(harness.cwd, "session.jsonl")}`,
+		"...",
+	]);
+	assert.deepEqual(expanded, [
+		"Playground session context",
+		"Session ID: session-123",
+		`Session file: ${join(harness.cwd, "session.jsonl")}`,
+		"Runbook: @docs/piux.md",
+	]);
 });
 
 void test("request logging toggle persists in session state and writes sidecar logs", async (t) => {
