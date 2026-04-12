@@ -64,7 +64,6 @@ If Pi is running without a persisted session file, it falls back to `.pi/playgro
 Docs naming split:
 
 - `piux` - user-only shell alias/function that starts or attaches the clean test base
-- `piux_tool` - docs reference name for the outer agent tmux-observation surface around that session
 - `piux_client` - actual playground custom tool name when this extension is loaded and playground is active
 
 ## Current utilities
