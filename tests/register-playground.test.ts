@@ -41,6 +41,11 @@ type LeaderItem = {
 	options?: Record<string, unknown>;
 };
 
+type RegisteredCommand = {
+	description?: string;
+	handler: (args: string, ctx: unknown) => Promise<void>;
+};
+
 function createEvents() {
 	const handlers = new Map<string, Array<(event: unknown, ctx: unknown) => unknown>>();
 
@@ -243,6 +248,10 @@ function createHarness(options?: {
 			});
 			return items;
 		},
+		runCommand: async (name: string, args = "") => {
+			const command = commands.get(name) as RegisteredCommand | undefined;
+			await command?.handler(args, ctx);
+		},
 		cleanup: () => {
 			rmSync(cwd, { recursive: true, force: true });
 		},
@@ -414,13 +423,16 @@ async function openPlaygroundSubmenu(harness: ReturnType<typeof createHarness>) 
 	return submenu;
 }
 
-void test("playground is inactive by default and exposes no slash command", async (t) => {
+void test("playground is inactive by default and exposes fallback slash commands", async (t) => {
 	const harness = createHarness();
 	t.after(harness.cleanup);
 
 	await harness.startSession();
 
-	assert.equal(harness.commands.size, 0);
+	assert.deepEqual([...harness.commands.keys()].sort(), [
+		"playground-activate",
+		"playground-toggle-request-logging",
+	]);
 	assert.equal(harness.widgets.get("pi-playground"), undefined);
 	assert.equal(harness.activeTools.current.includes("piux_client"), false);
 
@@ -442,6 +454,21 @@ void test("playground is inactive by default and exposes no slash command", asyn
 	});
 	assert.equal(existsSync(join(harness.cwd, ".pi", "playground", "provider-request.enabled")),
 		false);
+});
+
+void test("slash command activates inactive playground without leader", async (t) => {
+	const harness = createHarness();
+	t.after(harness.cleanup);
+
+	await harness.startSession();
+	await harness.runCommand("playground-activate");
+
+	assert.equal(harness.widgets.has("pi-playground"), true);
+	assert.equal(harness.activeTools.current.includes("piux_client"), true);
+	assert.deepEqual(getLatestState(harness.entries)?.data, {
+		active: true,
+		requestLogging: false,
+	});
 });
 
 void test("active playground reopens as a leader submenu after session reload", async (t) => {
@@ -618,4 +645,23 @@ void test("request logging toggle persists in session state and writes sidecar l
 		harness.notifications.some((item) => /playground request debug on/.test(item.message)),
 		true,
 	);
+});
+
+void test("slash command toggles request logging without leader", async (t) => {
+	const harness = createActiveHarness();
+	t.after(harness.cleanup);
+
+	await harness.startSession();
+	await harness.runCommand("playground-toggle-request-logging");
+
+	assert.deepEqual(getLatestState(harness.entries)?.data, {
+		active: true,
+		requestLogging: true,
+	});
+	assert.equal(
+		harness.notifications.some((item) => /playground request debug on/.test(item.message)),
+		true,
+	);
+	assert.equal(existsSync(join(harness.cwd, ".pi", "playground", "provider-request.enabled")),
+		false);
 });

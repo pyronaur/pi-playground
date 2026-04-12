@@ -104,6 +104,40 @@ export function registerPlayground(pi: ExtensionAPI) {
 		pi.sendMessage(currentMessage.toMessage(), { triggerTurn: false });
 	}
 
+	function activatePlayground(): void {
+		if (state.active) {
+			return;
+		}
+
+		setState(state.with({ active: true }));
+	}
+
+	function toggleRequestLogging(): boolean {
+		if (!state.active) {
+			ctx?.ui.notify("Activate playground first with /playground-activate", "warning");
+			return false;
+		}
+
+		setState(state.with({ requestLogging: !state.requestLogging }));
+		return true;
+	}
+
+	pi.registerCommand("playground-activate", {
+		description: "Activate playground for this session",
+		handler: async (_args, nextCtx) => {
+			ctx = nextCtx;
+			activatePlayground();
+		},
+	});
+
+	pi.registerCommand("playground-toggle-request-logging", {
+		description: "Toggle playground request logging for this session",
+		handler: async (_args, nextCtx) => {
+			ctx = nextCtx;
+			toggleRequestLogging();
+		},
+	});
+
 	function attachLeader(): void {
 		offLeader?.();
 		offLeader = pi.events.on("pi-leader", (event) => {
@@ -113,7 +147,7 @@ export function registerPlayground(pi: ExtensionAPI) {
 
 			event.add("g", "playground", ({ openSubmenu }) => {
 				if (!state.active) {
-					setState(state.with({ active: true }));
+					activatePlayground();
 					return;
 				}
 
@@ -122,7 +156,7 @@ export function registerPlayground(pi: ExtensionAPI) {
 						key: "r",
 						label: getRequestLoggingLabel(state),
 						run: () => {
-							setState(state.with({ requestLogging: !state.requestLogging }));
+							toggleRequestLogging();
 						},
 					},
 				]);
