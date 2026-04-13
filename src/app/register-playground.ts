@@ -9,6 +9,7 @@ import {
 	PLAYGROUND_STATE_TYPE,
 	PlaygroundSessionState,
 } from "../models/playground-session-state.ts";
+import { captureActualPrompt } from "../modules/actual-prompt.ts";
 import { PiuxTool } from "../modules/piux-tool.ts";
 import { PromptNavigator } from "../modules/prompt-navigator.ts";
 import { RequestDebugger } from "../modules/request-debugger.ts";
@@ -162,6 +163,14 @@ export function registerPlayground(pi: ExtensionAPI) {
 		},
 	});
 
+	pi.registerCommand("system-prompt", {
+		description: "Open the full system prompt inspector",
+		handler: async (_args, nextCtx) => {
+			ctx = nextCtx;
+			await openPromptNavigator(nextCtx);
+		},
+	});
+
 	function attachLeader(): void {
 		offLeader?.();
 		offLeader = pi.events.on("pi-leader", (event) => {
@@ -228,6 +237,7 @@ export function registerPlayground(pi: ExtensionAPI) {
 	});
 
 	pi.on("before_provider_request", async (event, nextCtx) => {
+		captureActualPrompt(event, nextCtx);
 		await requestDebugger.recordBeforeProviderRequest(event, nextCtx);
 	});
 

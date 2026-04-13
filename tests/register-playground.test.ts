@@ -468,6 +468,7 @@ void test("playground is inactive by default and exposes fallback slash commands
 	assert.deepEqual([...harness.commands.keys()].sort(), [
 		"playground-activate",
 		"playground-toggle-request-logging",
+		"system-prompt",
 		"system-view",
 	]);
 	assert.equal(harness.widgets.get("pi-playground"), undefined);
@@ -525,6 +526,16 @@ void test("slash command opens prompt navigator overlay when playground is activ
 			margin: 1,
 		},
 	});
+});
+
+void test("system-prompt command opens prompt navigator overlay when playground is active", async (t) => {
+	const harness = createActiveHarness();
+	t.after(harness.cleanup);
+
+	await harness.startSession();
+	await harness.runCommand("system-prompt");
+
+	assert.equal(harness.customCalls.length, 1);
 });
 
 void test("active playground reopens as a leader submenu after session reload", async (t) => {
@@ -734,4 +745,20 @@ void test("prompt navigator command warns when playground is inactive", async (t
 		harness.notifications.some((item) => /Activate playground first/.test(item.message)),
 		true,
 	);
+});
+
+void test("actual prompt capture writes a system prompt sidecar on provider request", async (t) => {
+	const harness = createHarness();
+	t.after(harness.cleanup);
+
+	await harness.startSession();
+	await harness.emit("before_provider_request", {
+		type: "before_provider_request",
+		payload: {
+			instructions: "wire truth",
+		},
+	});
+
+	assert.equal(existsSync(join(harness.cwd, "session.system-prompt.txt")), true);
+	assert.equal(readFileSync(join(harness.cwd, "session.system-prompt.txt"), "utf8"), "wire truth");
 });

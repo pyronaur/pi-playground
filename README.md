@@ -73,8 +73,8 @@ Docs naming split:
 - `leader` then `g` activates playground for current session
 - once active, `leader` then `g` then `p` opens prompt navigator overlay
 - once active, `leader` then `g` then `r` toggles provider request debugging
-- slash fallbacks mirror leader actions when `pi-leader` is absent: `/playground-activate`, `/system-view`, `/playground-toggle-request-logging`
-- prompt navigator tabs: `System Prompt` shows the exact full runtime prompt first, then the source breakdown items; `Tools` shows active tool metadata
+- slash fallbacks mirror leader actions when `pi-leader` is absent: `/playground-activate`, `/system-view`, `/system-prompt`, `/playground-toggle-request-logging`
+- prompt navigator tabs: `System Prompt` shows the actual last sent prompt from provider payload capture when available, then the full live runtime prompt, then the source breakdown items; `Tools` shows active tool metadata
 - prompt navigator keys: `c` copies current text, `e` opens current text in the editor via `/tmp/pi-system/*.md`, `s` opens the source file in the editor when present, `o` reveals the source in Finder
 - once active, `piux_client` tool becomes available to the agent
 - `piux_client` `look` supports `diff` (default), `screen`, `full_output`, and `last`

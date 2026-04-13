@@ -12,6 +12,7 @@ import {
 	visibleWidth,
 } from "@mariozechner/pi-tui";
 
+import { type ActualPromptCapture, readActualPrompt } from "./actual-prompt.ts";
 import { getEditorPaddingX } from "./editor-padding.ts";
 
 type NavigatorTab = "system" | "tools";
@@ -37,12 +38,16 @@ type PromptNavigatorData = {
 	currentDirectory: string;
 };
 
-type NavigatorCtx = Pick<ExtensionContext, "cwd" | "getSystemPrompt" | "hasUI" | "ui">;
+type NavigatorCtx = Pick<
+	ExtensionContext,
+	"cwd" | "getSystemPrompt" | "hasUI" | "sessionManager" | "ui"
+>;
 
 type PromptNavigatorOptions = {
 	agentDir?: string;
 	activeToolNames?: string[];
 	allTools?: ToolInfo[];
+	actualPrompt?: ActualPromptCapture;
 };
 
 const CONFIG_DIR = ".pi";
@@ -291,16 +296,29 @@ export function createPromptNavigatorData(
 ): PromptNavigatorData {
 	const agentDir = options.agentDir ?? getAgentDir();
 	const fullPrompt = ctx.getSystemPrompt();
-	const systemItems: PromptNavigatorItem[] = [
-		{
-			id: "effective-system-prompt",
-			label: "full prompt",
-			title: "Full effective system prompt",
-			content: fullPrompt,
-			kind: "synthetic",
-			meta: `${fullPrompt.length} chars • exact runtime prompt`,
-		},
-	];
+	const systemItems: PromptNavigatorItem[] = [];
+	if (options.actualPrompt) {
+		const actualItem: PromptNavigatorItem = {
+			id: "actual-system-prompt",
+			label: "actual sent",
+			title: "Actual sent system prompt",
+			content: options.actualPrompt.content,
+			kind: options.actualPrompt.path ? "file" : "synthetic",
+			meta: options.actualPrompt.source,
+		};
+		if (options.actualPrompt.path) {
+			actualItem.path = options.actualPrompt.path;
+		}
+		systemItems.push(actualItem);
+	}
+	systemItems.push({
+		id: "effective-system-prompt",
+		label: "live prompt",
+		title: "Full live runtime system prompt",
+		content: fullPrompt,
+		kind: "synthetic",
+		meta: `${fullPrompt.length} chars • ctx.getSystemPrompt()`,
+	});
 
 	const systemPath = discoverSystemPromptPath(ctx.cwd, agentDir);
 	const systemContent = readIfExists(systemPath);
@@ -798,10 +816,16 @@ export class PromptNavigator {
 			return;
 		}
 
-		const data = createPromptNavigatorData(ctx, {
+		const options: PromptNavigatorOptions = {
 			activeToolNames: this.pi.getActiveTools(),
 			allTools: this.pi.getAllTools(),
-		});
+		};
+		const actualPrompt = readActualPrompt(ctx.sessionManager.getSessionFile(), ctx.cwd);
+		if (actualPrompt) {
+			options.actualPrompt = actualPrompt;
+		}
+
+		const data = createPromptNavigatorData(ctx, options);
 		const contentPadding = getEditorPaddingX(ctx.cwd);
 
 		const copyText = async (item: PromptNavigatorItem) => {

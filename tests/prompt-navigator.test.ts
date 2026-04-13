@@ -72,6 +72,11 @@ void test("createPromptNavigatorData includes effective prompt, file-backed sour
 		},
 		{
 			agentDir,
+			actualPrompt: {
+				content: "wire truth\n",
+				source: "payload.instructions",
+				path: join(root, "session.system-prompt.txt"),
+			},
 			activeToolNames: ["read", "piux_client"],
 			allTools: [
 				{
@@ -96,9 +101,12 @@ void test("createPromptNavigatorData includes effective prompt, file-backed sour
 		},
 	);
 
-	assert.equal(data.systemItems[0]?.id, "effective-system-prompt");
-	assert.equal(data.systemItems[0]?.title, "Full effective system prompt");
-	assert.equal(data.systemItems[0]?.content, fullPrompt);
+	assert.equal(data.systemItems[0]?.id, "actual-system-prompt");
+	assert.equal(data.systemItems[0]?.title, "Actual sent system prompt");
+	assert.equal(data.systemItems[0]?.content, "wire truth\n");
+	assert.equal(data.systemItems[1]?.id, "effective-system-prompt");
+	assert.equal(data.systemItems[1]?.title, "Full live runtime system prompt");
+	assert.equal(data.systemItems[1]?.content, fullPrompt);
 	assert.equal(data.systemItems.some((item) => item.path === systemPath), true);
 	assert.equal(data.systemItems.some((item) => item.path === appendPath), true);
 	assert.equal(data.systemItems.some((item) => item.path === globalAgents), true);
