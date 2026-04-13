@@ -384,22 +384,6 @@ function createSessionItems(
 	}
 
 	const items: PromptNavigatorItem[] = [];
-	const rawFile = session.rawFile ?? readIfExists(session.sessionFile);
-	if (rawFile !== undefined) {
-		const rawItem: PromptNavigatorItem = {
-			id: "session-jsonl",
-			label: "session jsonl",
-			title: "Current session JSONL",
-			content: rawFile,
-			kind: session.sessionFile ? "file" : "synthetic",
-			meta: session.sessionFile ? shortPath(session.sessionFile, cwd) : "not persisted",
-		};
-		if (session.sessionFile) {
-			rawItem.path = session.sessionFile;
-		}
-		items.push(rawItem);
-	}
-
 	if (session.branch && session.branch.length > 0) {
 		items.push({
 			id: "session-branch",

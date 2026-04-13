@@ -135,10 +135,11 @@ void test("createPromptNavigatorData includes effective prompt, file-backed sour
 		},
 	);
 
-	assert.equal(data.sessionItems[0]?.id, "session-jsonl");
-	assert.equal(data.sessionItems[0]?.path, sessionFile);
+	assert.equal(data.sessionItems[0]?.id, "session-branch");
 	assert.match(data.sessionItems[0]?.content ?? "", /model_change/);
 	assert.equal(data.sessionItems.some((item) => item.id === "session-branch"), true);
+	assert.equal(data.sessionItems.some((item) => item.id === "session-jsonl"), false);
+	assert.equal(data.sessionItems.some((item) => item.id === "session-state"), true);
 	assert.equal(data.systemItems[0]?.id, "effective-system-prompt");
 	assert.equal(data.systemItems[0]?.title, "Full effective system prompt");
 	assert.equal(data.systemItems.some((item) => item.path === systemPath), true);
