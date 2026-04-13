@@ -12,6 +12,8 @@ import {
 	visibleWidth,
 } from "@mariozechner/pi-tui";
 
+import { getEditorPaddingX } from "./editor-padding.ts";
+
 type NavigatorTab = "system" | "tools";
 
 type PromptNavigatorItem = {
@@ -80,6 +82,34 @@ function shortPath(path: string, cwd: string): string {
 	}
 
 	return path;
+}
+
+function shortHomePath(path: string): string {
+	const home = homedir();
+	if (path === home) {
+		return "~";
+	}
+	if (path.startsWith(`${home}${sep}`)) {
+		return `~/${relative(home, path)}`;
+	}
+
+	return path;
+}
+
+export function getPromptNavigatorLayout(width: number, editorPaddingX: number): {
+	rowWidth: number;
+	innerWidth: number;
+	listWidth: number;
+	bodyWidth: number;
+	contentPadding: number;
+} {
+	const rowWidth = Math.max(20, width);
+	const innerWidth = Math.max(1, rowWidth - 2);
+	const contentPadding = Math.max(1, Math.min(3, Math.floor(editorPaddingX)));
+	const listWidth = Math.min(32 + contentPadding,
+		Math.max(22 + contentPadding, Math.floor(innerWidth * 0.28)));
+	const bodyWidth = Math.max(20, rowWidth - listWidth - 3);
+	return { rowWidth, innerWidth, listWidth, bodyWidth, contentPadding };
 }
 
 function getVisibleWindow(total: number, selected: number, limit: number): [number, number] {
@@ -426,6 +456,7 @@ class PromptNavigatorComponent implements Focusable {
 	private onCopyPath: (path: string) => Promise<void>;
 	private onOpenPath: (path: string) => Promise<void>;
 	private onEditPath: (path: string) => Promise<void>;
+	private contentPadding: number;
 
 	constructor(
 		tui: TUI,
@@ -435,6 +466,7 @@ class PromptNavigatorComponent implements Focusable {
 		onCopyPath: (path: string) => Promise<void>,
 		onOpenPath: (path: string) => Promise<void>,
 		onEditPath: (path: string) => Promise<void>,
+		contentPadding: number,
 	) {
 		this.tui = tui;
 		this.theme = theme;
@@ -443,6 +475,7 @@ class PromptNavigatorComponent implements Focusable {
 		this.onCopyPath = onCopyPath;
 		this.onOpenPath = onOpenPath;
 		this.onEditPath = onEditPath;
+		this.contentPadding = contentPadding;
 	}
 
 	private get items(): PromptNavigatorItem[] {
@@ -587,10 +620,14 @@ class PromptNavigatorComponent implements Focusable {
 
 	render(width: number): string[] {
 		const theme = this.theme;
-		const innerWidth = Math.max(20, width - 2);
-		const listWidth = Math.min(32, Math.max(22, Math.floor(innerWidth * 0.28)));
-		const bodyWidth = Math.max(20, innerWidth - listWidth - 3);
+		const { innerWidth, listWidth, bodyWidth, contentPadding } = getPromptNavigatorLayout(
+			width,
+			this.contentPadding,
+		);
 		const border = (value: string) => theme.fg("border", value);
+		const inset = " ".repeat(contentPadding);
+		const listContentWidth = Math.max(1, listWidth - contentPadding);
+		const bodyContentWidth = Math.max(1, bodyWidth - contentPadding);
 		const pad = (value: string, target: number) => {
 			const visual = visibleWidth(value);
 			return value + " ".repeat(Math.max(0, target - visual));
@@ -613,7 +650,7 @@ class PromptNavigatorComponent implements Focusable {
 		const selected = this.selectedItem;
 		const [listStart, listEnd] = getVisibleWindow(items.length, this.selectedIndex, MAX_LIST_LINES);
 		const visibleItems = items.slice(listStart, listEnd);
-		const bodyLines = selected ? wrapText(selected.content, bodyWidth) : ["No content."];
+		const bodyLines = selected ? wrapText(selected.content, bodyContentWidth) : ["No content."];
 		const maxScroll = Math.max(0, bodyLines.length - MAX_BODY_LINES);
 		const scroll = Math.max(0, Math.min(maxScroll, this.scroll));
 		this.scroll = scroll;
@@ -623,39 +660,60 @@ class PromptNavigatorComponent implements Focusable {
 		const title = truncateToWidth(" Prompt Navigator ", innerWidth);
 		const titlePad = Math.max(0, innerWidth - visibleWidth(title));
 		output.push(border("╭") + theme.fg("accent", title) + border(`${"─".repeat(titlePad)}╮`));
+		const shortcuts = selected?.path
+			? "←→ tabs • ↑↓ items • PgUp/PgDn scroll • c copy • o finder • e edit • Esc close"
+			: "←→ tabs • ↑↓ items • PgUp/PgDn scroll • Esc close";
 		output.push(
-			row(theme.fg("dim", tabs), theme.fg("dim", this.busy
-				? "working..."
-				: `cwd ${shortPath(this.data.currentDirectory, this.data.currentDirectory)}`)),
+			row(
+				`${inset}${theme.fg("dim", tabs)}`,
+				`${inset}${
+					theme.fg(
+						"dim",
+						this.busy ? "working..." : `cwd ${shortHomePath(this.data.currentDirectory)}`,
+					)
+				}`,
+			),
+		);
+		output.push(
+			row(`${inset}${theme.fg("dim", "shortcuts")}`, `${inset}${theme.fg("dim", shortcuts)}`),
 		);
 		output.push(row(
-			this.tab === "system"
-				? theme.fg("dim", `${items.length} prompt blocks`)
-				: theme.fg("dim", `${this.data.activeToolCount}/${this.data.totalToolCount} active tools`),
+			`${inset}${
+				this.tab === "system"
+					? theme.fg("dim", `${items.length} prompt blocks`)
+					: theme.fg("dim", `${this.data.activeToolCount}/${this.data.totalToolCount} active tools`)
+			}`,
 			selected?.path
-				? theme.fg("dim", shortPath(selected.path, this.data.currentDirectory))
-				: theme.fg("dim", selected?.meta ?? "no path"),
+				? `${inset}${theme.fg("dim", shortPath(selected.path, this.data.currentDirectory))}`
+				: `${inset}${theme.fg("dim", selected?.meta ?? "no path")}`,
 		));
-		output.push(row("", theme.bold(selected?.title ?? "No selection")));
+		output.push(row("", `${inset}${theme.bold(selected?.title ?? "No selection")}`));
 
 		for (let i = 0; i < MAX_BODY_LINES; i++) {
 			const item = visibleItems[i];
 			const listLine = item
 				? (listStart + i === this.selectedIndex
-					? theme.fg("accent", `▶ ${item.label}`)
-					: `  ${item.label}`)
+					? `${inset}${
+						theme.fg("accent", truncateToWidth(`▶ ${item.label}`, listContentWidth, "…", true))
+					}`
+					: `${inset}${truncateToWidth(`  ${item.label}`, listContentWidth, "…", true)}`)
 				: "";
-			const bodyLine = visibleBody[i] ?? "";
+			const bodyLine = `${inset}${visibleBody[i] ?? ""}`;
 			output.push(row(listLine, bodyLine));
 		}
 
-		const footerLeft = theme.fg("dim",
-			`item ${items.length === 0 ? 0 : this.selectedIndex + 1}/${items.length}`);
+		const footerLeft = `${inset}${
+			theme.fg(
+				"dim",
+				`item ${items.length === 0 ? 0 : this.selectedIndex + 1}/${items.length}`,
+			)
+		}`;
+		const maxBodyLine = Math.min(bodyLines.length, scroll + MAX_BODY_LINES);
 		const footerRight = theme.fg(
 			"dim",
-			"←→ tabs • ↑↓ items • PgUp/PgDn scroll • c copy • o finder • e edit • Esc close",
+			`lines ${bodyLines.length === 0 ? 0 : scroll + 1}-${maxBodyLine}/${bodyLines.length}`,
 		);
-		output.push(row(footerLeft, footerRight));
+		output.push(row(footerLeft, `${inset}${footerRight}`));
 		output.push(border(`╰${"─".repeat(innerWidth)}╯`));
 		return output;
 	}
@@ -680,6 +738,7 @@ export class PromptNavigator {
 			activeToolNames: this.pi.getActiveTools(),
 			allTools: this.pi.getAllTools(),
 		});
+		const contentPadding = getEditorPaddingX(ctx.cwd);
 
 		const copyPath = async (path: string) => {
 			const result = await this.pi.exec("bash", ["-lc", "printf '%s' \"$1\" | pbcopy", "--", path],
@@ -720,8 +779,16 @@ export class PromptNavigator {
 
 		await ctx.ui.custom<void>(
 			(tui, theme, _kb, done) =>
-				new PromptNavigatorComponent(tui, theme, data, () => done(undefined), copyPath, openPath,
-					editPath),
+				new PromptNavigatorComponent(
+					tui,
+					theme,
+					data,
+					() => done(undefined),
+					copyPath,
+					openPath,
+					editPath,
+					contentPadding,
+				),
 			{
 				overlay: true,
 				overlayOptions: {

@@ -7,6 +7,7 @@ import test from "node:test";
 import {
 	createPromptNavigatorData,
 	getExternalEditorCommandForTest,
+	getPromptNavigatorLayout,
 } from "../src/modules/prompt-navigator.ts";
 
 void test("createPromptNavigatorData includes effective prompt, file-backed sources, and active tools", () => {
@@ -139,4 +140,11 @@ void test("getExternalEditorCommandForTest splits VISUAL args", () => {
 		args: ["--wait"],
 	});
 	assert.equal(getExternalEditorCommandForTest({} as never), undefined);
+});
+
+void test("getPromptNavigatorLayout keeps split rows aligned to the popup frame", () => {
+	const layout = getPromptNavigatorLayout(120, 2);
+	assert.equal(layout.rowWidth, 120);
+	assert.equal(layout.contentPadding, 2);
+	assert.equal(layout.listWidth + layout.bodyWidth + 3, 120);
 });
