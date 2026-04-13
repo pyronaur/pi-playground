@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -8,6 +8,7 @@ import {
 	createPromptNavigatorData,
 	getExternalEditorCommandForTest,
 	getPromptNavigatorLayout,
+	writePromptNavigatorTextFile,
 } from "../src/modules/prompt-navigator.ts";
 
 void test("createPromptNavigatorData includes effective prompt, file-backed sources, and active tools", () => {
@@ -147,4 +148,15 @@ void test("getPromptNavigatorLayout keeps split rows aligned to the popup frame"
 	assert.equal(layout.rowWidth, 120);
 	assert.equal(layout.contentPadding, 2);
 	assert.equal(layout.listWidth + layout.bodyWidth + 3, 120);
+});
+
+void test("writePromptNavigatorTextFile writes rendered text to a temp markdown file", () => {
+	const root = mkdtempSync(join(tmpdir(), "prompt-nav-text-"));
+	const path = writePromptNavigatorTextFile("hello\nworld\n", "Effective system prompt", root,
+		"stamp");
+
+	assert.match(path, /effective-system-prompt-stamp\.md$/);
+	assert.equal(readFileSync(path, "utf8"), "hello\nworld\n");
+
+	rmSync(root, { recursive: true, force: true });
 });

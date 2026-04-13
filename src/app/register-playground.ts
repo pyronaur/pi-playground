@@ -154,7 +154,7 @@ export function registerPlayground(pi: ExtensionAPI) {
 		},
 	});
 
-	pi.registerCommand("playground-prompt-navigator", {
+	pi.registerCommand("system-view", {
 		description: "Open the playground prompt navigator",
 		handler: async (_args, nextCtx) => {
 			ctx = nextCtx;

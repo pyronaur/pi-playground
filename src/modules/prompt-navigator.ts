@@ -1,5 +1,5 @@
-import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { basename, join, relative, resolve, sep } from "node:path";
 
 import type { ExtensionAPI, ExtensionContext, ToolInfo } from "@mariozechner/pi-coding-agent";
@@ -426,6 +426,28 @@ function getEditorCommand(): { command: string; args: string[] } | undefined {
 	return { command, args };
 }
 
+function slugifyTitle(title: string): string {
+	const slug = title
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, "-")
+		.replace(/^-+|-+$/g, "")
+		.slice(0, 48);
+
+	return slug || "system-view";
+}
+
+export function writePromptNavigatorTextFile(
+	content: string,
+	title: string,
+	root = join(tmpdir(), "pi-system"),
+	stamp = String(Date.now()),
+): string {
+	mkdirSync(root, { recursive: true });
+	const path = join(root, `${slugifyTitle(title)}-${stamp}.md`);
+	writeFileSync(path, content, "utf8");
+	return path;
+}
+
 export function getExternalEditorCommandForTest(
 	env: NodeJS.ProcessEnv,
 ): { command: string; args: string[] } | undefined {
@@ -453,9 +475,10 @@ class PromptNavigatorComponent implements Focusable {
 	private theme: ExtensionContext["ui"]["theme"];
 	private data: PromptNavigatorData;
 	private done: () => void;
-	private onCopyPath: (path: string) => Promise<void>;
-	private onOpenPath: (path: string) => Promise<void>;
-	private onEditPath: (path: string) => Promise<void>;
+	private onCopyText: (item: PromptNavigatorItem) => Promise<void>;
+	private onOpenSource: (path: string) => Promise<void>;
+	private onOpenText: (item: PromptNavigatorItem) => Promise<void>;
+	private onEditSource: (path: string) => Promise<void>;
 	private contentPadding: number;
 
 	constructor(
@@ -463,18 +486,20 @@ class PromptNavigatorComponent implements Focusable {
 		theme: ExtensionContext["ui"]["theme"],
 		data: PromptNavigatorData,
 		done: () => void,
-		onCopyPath: (path: string) => Promise<void>,
-		onOpenPath: (path: string) => Promise<void>,
-		onEditPath: (path: string) => Promise<void>,
+		onCopyText: (item: PromptNavigatorItem) => Promise<void>,
+		onOpenSource: (path: string) => Promise<void>,
+		onOpenText: (item: PromptNavigatorItem) => Promise<void>,
+		onEditSource: (path: string) => Promise<void>,
 		contentPadding: number,
 	) {
 		this.tui = tui;
 		this.theme = theme;
 		this.data = data;
 		this.done = done;
-		this.onCopyPath = onCopyPath;
-		this.onOpenPath = onOpenPath;
-		this.onEditPath = onEditPath;
+		this.onCopyText = onCopyText;
+		this.onOpenSource = onOpenSource;
+		this.onOpenText = onOpenText;
+		this.onEditSource = onEditSource;
 		this.contentPadding = contentPadding;
 	}
 
@@ -555,6 +580,19 @@ class PromptNavigatorComponent implements Focusable {
 		});
 	}
 
+	private runItemAction(action: (item: PromptNavigatorItem) => Promise<void>): void {
+		const item = this.selectedItem;
+		if (!item || this.busy) {
+			return;
+		}
+
+		this.busy = true;
+		void action(item).finally(() => {
+			this.busy = false;
+			this.tui.requestRender();
+		});
+	}
+
 	handleInput(data: string): void {
 		if (matchesKey(data, "escape") || matchesKey(data, "q") || matchesKey(data, "ctrl+c")) {
 			this.done();
@@ -604,17 +642,22 @@ class PromptNavigatorComponent implements Focusable {
 		}
 
 		if (matchesKey(data, "c")) {
-			this.runPathAction(this.onCopyPath);
+			this.runItemAction(this.onCopyText);
 			return;
 		}
 
 		if (matchesKey(data, "o")) {
-			this.runPathAction(this.onOpenPath);
+			this.runPathAction(this.onOpenSource);
 			return;
 		}
 
 		if (matchesKey(data, "e")) {
-			this.runPathAction(this.onEditPath);
+			this.runItemAction(this.onOpenText);
+			return;
+		}
+
+		if (matchesKey(data, "s")) {
+			this.runPathAction(this.onEditSource);
 		}
 	}
 
@@ -661,8 +704,8 @@ class PromptNavigatorComponent implements Focusable {
 		const titlePad = Math.max(0, innerWidth - visibleWidth(title));
 		output.push(border("╭") + theme.fg("accent", title) + border(`${"─".repeat(titlePad)}╮`));
 		const shortcuts = selected?.path
-			? "←→ tabs • ↑↓ items • PgUp/PgDn scroll • c copy • o finder • e edit • Esc close"
-			: "←→ tabs • ↑↓ items • PgUp/PgDn scroll • Esc close";
+			? "←→ tabs • ↑↓ items • PgUp/PgDn scroll • c copy text • e edit text • s source • o finder • Esc close"
+			: "←→ tabs • ↑↓ items • PgUp/PgDn scroll • c copy text • e edit text • Esc close";
 		output.push(
 			row(
 				`${inset}${theme.fg("dim", tabs)}`,
@@ -740,18 +783,24 @@ export class PromptNavigator {
 		});
 		const contentPadding = getEditorPaddingX(ctx.cwd);
 
-		const copyPath = async (path: string) => {
-			const result = await this.pi.exec("bash", ["-lc", "printf '%s' \"$1\" | pbcopy", "--", path],
-				{ cwd: ctx.cwd });
+		const copyText = async (item: PromptNavigatorItem) => {
+			const result = await this.pi.exec("bash", [
+				"-lc",
+				"printf '%s' \"$1\" | pbcopy",
+				"--",
+				item.content,
+			], {
+				cwd: ctx.cwd,
+			});
 			if (result.code === 0) {
-				ctx.ui.notify(`Copied path: ${path}`, "info");
+				ctx.ui.notify(`Copied text: ${item.title}`, "info");
 				return;
 			}
 
-			ctx.ui.notify(result.stderr || "Failed to copy path", "error");
+			ctx.ui.notify(result.stderr || "Failed to copy text", "error");
 		};
 
-		const openPath = async (path: string) => {
+		const openSource = async (path: string) => {
 			const result = await this.pi.exec("open", ["-R", path], { cwd: ctx.cwd });
 			if (result.code === 0) {
 				ctx.ui.notify(`Revealed in Finder: ${path}`, "info");
@@ -761,7 +810,24 @@ export class PromptNavigator {
 			ctx.ui.notify(result.stderr || "Failed to open Finder", "error");
 		};
 
-		const editPath = async (path: string) => {
+		const openText = async (item: PromptNavigatorItem) => {
+			const editor = getEditorCommand();
+			if (!editor) {
+				ctx.ui.notify("No editor configured. Set $VISUAL or $EDITOR.", "warning");
+				return;
+			}
+
+			const path = writePromptNavigatorTextFile(item.content, item.title);
+			const result = await this.pi.exec(editor.command, [...editor.args, path], { cwd: ctx.cwd });
+			if (result.code === 0) {
+				ctx.ui.notify(`Opened text in editor: ${path}`, "info");
+				return;
+			}
+
+			ctx.ui.notify(result.stderr || `Failed to launch editor: ${editor.command}`, "error");
+		};
+
+		const editSource = async (path: string) => {
 			const editor = getEditorCommand();
 			if (!editor) {
 				ctx.ui.notify("No editor configured. Set $VISUAL or $EDITOR.", "warning");
@@ -784,9 +850,10 @@ export class PromptNavigator {
 					theme,
 					data,
 					() => done(undefined),
-					copyPath,
-					openPath,
-					editPath,
+					copyText,
+					openSource,
+					openText,
+					editSource,
 					contentPadding,
 				),
 			{

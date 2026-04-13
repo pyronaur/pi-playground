@@ -11,8 +11,8 @@
 - Layout: `src/index.ts` is boot-only. No feature logic there.
 - Runtime: extension entry stays minimal. Reusable debug helpers live in separate modules and are imported by the entry.
 - Playground control: leader actions must always have slash-command fallbacks so playground still works when `pi-leader` is absent.
-- Playground control: keep slash fallback names under `/playground-*` and mirror leader behavior.
-- Playground control: current fallback commands are `/playground-activate`, `/playground-prompt-navigator`, and `/playground-toggle-request-logging`.
+- Playground control: slash fallback names should mirror leader behavior. Current exception: prompt navigator uses `/system-view`.
+- Playground control: current fallback commands are `/playground-activate`, `/system-view`, and `/playground-toggle-request-logging`.
 - Storage: keep debug traces out of LLM context. Prefer session-adjacent sidecar files for large wire payloads.
 - Completion workflow lives in `.gatefile.json5`.
 - Gate protection: `src/play/*` requires explicit `--allow-play` before gate can finish green.

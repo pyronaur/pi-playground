@@ -73,7 +73,8 @@ Docs naming split:
 - `leader` then `g` activates playground for current session
 - once active, `leader` then `g` then `p` opens prompt navigator overlay
 - once active, `leader` then `g` then `r` toggles provider request debugging
-- slash fallbacks mirror leader actions when `pi-leader` is absent: `/playground-activate`, `/playground-prompt-navigator`, `/playground-toggle-request-logging`
+- slash fallbacks mirror leader actions when `pi-leader` is absent: `/playground-activate`, `/system-view`, `/playground-toggle-request-logging`
+- prompt navigator keys: `c` copies current text, `e` opens current text in the editor via `/tmp/pi-system/*.md`, `s` opens the source file in the editor when present, `o` reveals the source in Finder
 - once active, `piux_client` tool becomes available to the agent
 - `piux_client` `look` supports `diff` (default), `screen`, `full_output`, and `last`
 - every `look` captures full tmux output once, saves that full snapshot, then returns a projection:

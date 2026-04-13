@@ -467,8 +467,8 @@ void test("playground is inactive by default and exposes fallback slash commands
 
 	assert.deepEqual([...harness.commands.keys()].sort(), [
 		"playground-activate",
-		"playground-prompt-navigator",
 		"playground-toggle-request-logging",
+		"system-view",
 	]);
 	assert.equal(harness.widgets.get("pi-playground"), undefined);
 	assert.equal(harness.activeTools.current.includes("piux_client"), false);
@@ -513,7 +513,7 @@ void test("slash command opens prompt navigator overlay when playground is activ
 	t.after(harness.cleanup);
 
 	await harness.startSession();
-	await harness.runCommand("playground-prompt-navigator");
+	await harness.runCommand("system-view");
 
 	assert.equal(harness.customCalls.length, 1);
 	assert.deepEqual(harness.customCalls[0]?.options, {
@@ -727,7 +727,7 @@ void test("prompt navigator command warns when playground is inactive", async (t
 	t.after(harness.cleanup);
 
 	await harness.startSession();
-	await harness.runCommand("playground-prompt-navigator");
+	await harness.runCommand("system-view");
 
 	assert.equal(harness.customCalls.length, 0);
 	assert.equal(
