@@ -14,7 +14,9 @@ import {
 
 import { getEditorPaddingX } from "./editor-padding.ts";
 
-type NavigatorTab = "system" | "tools";
+type NavigatorTab = "session" | "system" | "tools";
+
+const NAVIGATOR_TABS: NavigatorTab[] = ["session", "system", "tools"];
 
 type PromptNavigatorItem = {
 	id: string;
@@ -27,6 +29,7 @@ type PromptNavigatorItem = {
 };
 
 type PromptNavigatorData = {
+	sessionItems: PromptNavigatorItem[];
 	systemItems: PromptNavigatorItem[];
 	toolItems: PromptNavigatorItem[];
 	activeToolCount: number;
@@ -35,12 +38,46 @@ type PromptNavigatorData = {
 	currentDirectory: string;
 };
 
-type NavigatorCtx = Pick<ExtensionContext, "cwd" | "getSystemPrompt" | "hasUI" | "ui">;
+type NavigatorCtx = Pick<
+	ExtensionContext,
+	"cwd" | "getSystemPrompt" | "hasUI" | "sessionManager" | "ui"
+>;
 
 type PromptNavigatorOptions = {
 	agentDir?: string;
 	activeToolNames?: string[];
 	allTools?: ToolInfo[];
+	sessionData?: PromptSessionData;
+};
+
+type PromptSessionHeader = {
+	id: string;
+	timestamp: string;
+	cwd: string;
+	parentSession?: string;
+	version?: number;
+};
+
+type PromptSessionEntry = {
+	type: string;
+	id: string;
+	parentId: string | null;
+	timestamp?: string;
+	provider?: unknown;
+	modelId?: unknown;
+	thinkingLevel?: unknown;
+};
+
+type PromptSessionData = {
+	sessionFile?: string;
+	sessionDir?: string;
+	sessionId?: string;
+	sessionName?: string;
+	leafId?: string | null;
+	header?: PromptSessionHeader | null;
+	entries?: PromptSessionEntry[];
+	branch?: PromptSessionEntry[];
+	rawFile?: string;
 };
 
 const CONFIG_DIR = ".pi";
@@ -283,20 +320,124 @@ function formatToolContent(tool: ToolInfo): string {
 	return parts.join("\n");
 }
 
+function findLatestEntry(
+	entries: PromptSessionEntry[] | undefined,
+	type: string,
+): PromptSessionEntry | undefined {
+	if (!entries) {
+		return undefined;
+	}
+
+	for (let index = entries.length - 1; index >= 0; index -= 1) {
+		if (entries[index]?.type === type) {
+			return entries[index];
+		}
+	}
+
+	return undefined;
+}
+
+function formatJson(value: unknown): string {
+	return JSON.stringify(value, null, 2);
+}
+
+function formatSessionState(session: PromptSessionData, cwd: string): string {
+	const model = findLatestEntry(session.branch, "model_change");
+	const thinking = findLatestEntry(session.branch, "thinking_level_change");
+	const compaction = findLatestEntry(session.branch, "compaction");
+	const parts = [
+		`Session ID: ${session.sessionId ?? session.header?.id ?? "(unknown)"}`,
+		`Session file: ${session.sessionFile ?? "(not persisted)"}`,
+		`Session dir: ${session.sessionDir ?? "(unknown)"}`,
+		`Session name: ${session.sessionName ?? "(none)"}`,
+		`Leaf ID: ${session.leafId ?? "(none)"}`,
+		`Header cwd: ${session.header?.cwd ?? cwd}`,
+		`Current cwd: ${cwd}`,
+		`Entry count: ${session.entries?.length ?? 0}`,
+		`Branch entry count: ${session.branch?.length ?? 0}`,
+		`Current model: ${
+			model ? `${String(model.provider ?? "?")}/${String(model.modelId ?? "?")}` : "(none)"
+		}`,
+		`Thinking level: ${thinking ? String(thinking.thinkingLevel ?? "?") : "(none)"}`,
+		`Latest compaction: ${compaction ? String(compaction.id) : "(none)"}`,
+	];
+
+	if (session.header) {
+		parts.push("", "Header:", formatJson(session.header));
+	}
+
+	return parts.join("\n");
+}
+
+function createSessionItems(
+	cwd: string,
+	session: PromptSessionData | undefined,
+): PromptNavigatorItem[] {
+	if (!session) {
+		return [{
+			id: "session-state",
+			label: "session state",
+			title: "Current session state",
+			content: "Session data unavailable.",
+			kind: "synthetic",
+		}];
+	}
+
+	const items: PromptNavigatorItem[] = [];
+	const rawFile = session.rawFile ?? readIfExists(session.sessionFile);
+	if (rawFile !== undefined) {
+		const rawItem: PromptNavigatorItem = {
+			id: "session-jsonl",
+			label: "session jsonl",
+			title: "Current session JSONL",
+			content: rawFile,
+			kind: session.sessionFile ? "file" : "synthetic",
+			meta: session.sessionFile ? shortPath(session.sessionFile, cwd) : "not persisted",
+		};
+		if (session.sessionFile) {
+			rawItem.path = session.sessionFile;
+		}
+		items.push(rawItem);
+	}
+
+	if (session.branch && session.branch.length > 0) {
+		items.push({
+			id: "session-branch",
+			label: "current branch",
+			title: "Current branch entries",
+			content: formatJson(session.branch),
+			kind: "synthetic",
+			meta: `${session.branch.length} entries`,
+		});
+	}
+
+	items.push({
+		id: "session-state",
+		label: "session state",
+		title: "Current session state",
+		content: formatSessionState(session, cwd),
+		kind: "synthetic",
+		meta: session.sessionFile ? shortPath(session.sessionFile, cwd) : "not persisted",
+	});
+
+	return items;
+}
+
 export function createPromptNavigatorData(
 	ctx: Pick<NavigatorCtx, "cwd" | "getSystemPrompt">,
 	options: PromptNavigatorOptions = {},
 ): PromptNavigatorData {
 	const agentDir = options.agentDir ?? getAgentDir();
 	const fullPrompt = ctx.getSystemPrompt();
+	const sessionItems = createSessionItems(ctx.cwd, options.sessionData);
 	const systemItems: PromptNavigatorItem[] = [
 		{
 			id: "effective-system-prompt",
-			label: "effective",
-			title: "Effective system prompt",
+			label: "full prompt",
+			title: "Full effective system prompt",
 			content: fullPrompt,
 			kind: "synthetic",
-			meta: `${fullPrompt.length} chars`,
+			meta: `${fullPrompt.length} chars • exact runtime prompt`,
 		},
 	];
 
@@ -403,6 +544,7 @@ export function createPromptNavigatorData(
 	}));
 
 	return {
+		sessionItems,
 		systemItems,
 		toolItems,
 		activeToolCount: toolItems.length,
@@ -466,7 +608,8 @@ export function getExternalEditorCommandForTest(
 
 class PromptNavigatorComponent implements Focusable {
 	focused = false;
-	private tab: NavigatorTab = "system";
+	private tab: NavigatorTab = "session";
+	private sessionIndex = 0;
 	private systemIndex = 0;
 	private toolIndex = 0;
 	private scroll = 0;
@@ -504,14 +647,35 @@ class PromptNavigatorComponent implements Focusable {
 	}
 
 	private get items(): PromptNavigatorItem[] {
-		return this.tab === "system" ? this.data.systemItems : this.data.toolItems;
+		if (this.tab === "session") {
+			return this.data.sessionItems;
+		}
+
+		if (this.tab === "system") {
+			return this.data.systemItems;
+		}
+
+		return this.data.toolItems;
 	}
 
 	private get selectedIndex(): number {
-		return this.tab === "system" ? this.systemIndex : this.toolIndex;
+		if (this.tab === "session") {
+			return this.sessionIndex;
+		}
+
+		if (this.tab === "system") {
+			return this.systemIndex;
+		}
+
+		return this.toolIndex;
 	}
 
 	private set selectedIndex(value: number) {
+		if (this.tab === "session") {
+			this.sessionIndex = value;
+			return;
+		}
+
 		if (this.tab === "system") {
 			this.systemIndex = value;
 			return;
@@ -532,6 +696,17 @@ class PromptNavigatorComponent implements Focusable {
 		this.tab = tab;
 		this.scroll = 0;
 		this.tui.requestRender();
+	}
+
+	private moveTab(delta: number): void {
+		const current = NAVIGATOR_TABS.indexOf(this.tab);
+		const next = Math.max(0, Math.min(NAVIGATOR_TABS.length - 1, current + delta));
+		const tab = NAVIGATOR_TABS[next];
+		if (!tab) {
+			return;
+		}
+
+		this.setTab(tab);
 	}
 
 	private moveSelection(delta: number): void {
@@ -600,12 +775,12 @@ class PromptNavigatorComponent implements Focusable {
 		}
 
 		if (matchesKey(data, "left")) {
-			this.setTab("system");
+			this.moveTab(-1);
 			return;
 		}
 
 		if (matchesKey(data, "right")) {
-			this.setTab("tools");
+			this.moveTab(1);
 			return;
 		}
 
@@ -683,6 +858,9 @@ class PromptNavigatorComponent implements Focusable {
 			+ border("│");
 
 		const tabs = [
+			this.tab === "session"
+				? theme.bold(theme.fg("accent", "[Session]"))
+				: theme.fg("dim", "[Session]"),
 			this.tab === "system"
 				? theme.bold(theme.fg("accent", "[System Prompt]"))
 				: theme.fg("dim", "[System Prompt]"),
@@ -722,7 +900,9 @@ class PromptNavigatorComponent implements Focusable {
 		);
 		output.push(row(
 			`${inset}${
-				this.tab === "system"
+				this.tab === "session"
+					? theme.fg("dim", `${items.length} session views`)
+					: this.tab === "system"
 					? theme.fg("dim", `${items.length} prompt blocks`)
 					: theme.fg("dim", `${this.data.activeToolCount}/${this.data.totalToolCount} active tools`)
 			}`,
@@ -777,9 +957,49 @@ export class PromptNavigator {
 			return;
 		}
 
+		const sessionManager = ctx.sessionManager as Partial<NavigatorCtx["sessionManager"]>;
+		const sessionFile = sessionManager.getSessionFile?.();
+		const sessionData: PromptSessionData = {};
+		if (sessionFile) {
+			sessionData.sessionFile = sessionFile;
+			const rawFile = readIfExists(sessionFile);
+			if (rawFile !== undefined) {
+				sessionData.rawFile = rawFile;
+			}
+		}
+		const sessionDir = sessionManager.getSessionDir?.();
+		if (sessionDir) {
+			sessionData.sessionDir = sessionDir;
+		}
+		const sessionId = sessionManager.getSessionId?.();
+		if (sessionId) {
+			sessionData.sessionId = sessionId;
+		}
+		const sessionName = sessionManager.getSessionName?.();
+		if (sessionName) {
+			sessionData.sessionName = sessionName;
+		}
+		const leafId = sessionManager.getLeafId?.();
+		if (leafId !== undefined) {
+			sessionData.leafId = leafId;
+		}
+		const header = sessionManager.getHeader?.();
+		if (header !== undefined) {
+			sessionData.header = header;
+		}
+		const entries = sessionManager.getEntries?.() as PromptSessionEntry[] | undefined;
+		if (entries) {
+			sessionData.entries = entries;
+		}
+		const branch = sessionManager.getBranch?.() as PromptSessionEntry[] | undefined;
+		if (branch) {
+			sessionData.branch = branch;
+		}
+
 		const data = createPromptNavigatorData(ctx, {
 			activeToolNames: this.pi.getActiveTools(),
 			allTools: this.pi.getAllTools(),
+			sessionData,
 		});
 		const contentPadding = getEditorPaddingX(ctx.cwd);
 

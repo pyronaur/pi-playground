@@ -25,11 +25,32 @@ void test("createPromptNavigatorData includes effective prompt, file-backed sour
 	const systemPath = join(cwd, ".pi", "SYSTEM.md");
 	const appendPath = join(cwd, ".pi", "APPEND_SYSTEM.md");
 	const repoAgents = join(repo, "AGENTS.md");
+	const sessionFile = join(root, "session.jsonl");
 
 	writeFileSync(globalAgents, "global agents\n", "utf8");
 	writeFileSync(systemPath, "custom system\n", "utf8");
 	writeFileSync(appendPath, "append system\n", "utf8");
 	writeFileSync(repoAgents, "repo agents\n", "utf8");
+	writeFileSync(
+		sessionFile,
+		[
+			JSON.stringify({
+				type: "session",
+				id: "session-123",
+				cwd,
+				timestamp: "2026-04-13T00:00:00.000Z",
+			}),
+			JSON.stringify({
+				type: "model_change",
+				id: "2",
+				parentId: "1",
+				provider: "demo",
+				modelId: "x",
+				timestamp: "2026-04-13T00:00:01.000Z",
+			}),
+		].join("\n") + "\n",
+		"utf8",
+	);
 
 	const fullPrompt = [
 		"custom system",
@@ -72,6 +93,24 @@ void test("createPromptNavigatorData includes effective prompt, file-backed sour
 		},
 		{
 			agentDir,
+			sessionData: {
+				sessionFile,
+				sessionDir: root,
+				sessionId: "session-123",
+				leafId: "2",
+				header: {
+					id: "session-123",
+					timestamp: "2026-04-13T00:00:00.000Z",
+					cwd,
+				},
+				entries: [
+					{ type: "model_change", id: "2", parentId: "1", provider: "demo", modelId: "x" },
+				],
+				branch: [
+					{ type: "model_change", id: "2", parentId: "1", provider: "demo", modelId: "x" },
+				],
+				rawFile: readFileSync(sessionFile, "utf8"),
+			},
 			activeToolNames: ["read", "piux_client"],
 			allTools: [
 				{
@@ -96,7 +135,12 @@ void test("createPromptNavigatorData includes effective prompt, file-backed sour
 		},
 	);
 
+	assert.equal(data.sessionItems[0]?.id, "session-jsonl");
+	assert.equal(data.sessionItems[0]?.path, sessionFile);
+	assert.match(data.sessionItems[0]?.content ?? "", /model_change/);
+	assert.equal(data.sessionItems.some((item) => item.id === "session-branch"), true);
 	assert.equal(data.systemItems[0]?.id, "effective-system-prompt");
+	assert.equal(data.systemItems[0]?.title, "Full effective system prompt");
 	assert.equal(data.systemItems.some((item) => item.path === systemPath), true);
 	assert.equal(data.systemItems.some((item) => item.path === appendPath), true);
 	assert.equal(data.systemItems.some((item) => item.path === globalAgents), true);
