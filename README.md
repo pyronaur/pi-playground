@@ -23,6 +23,7 @@ Current modules:
 - `src/models/piux-look-store.ts` - `piux` look artifact numbering and storage
 - `src/modules/piux-tool.ts` - playground-only `piux_client` tool for tmux look/do actions
 - `src/modules/prompt-navigator.ts` - user-only overlay for inspecting effective prompt and active tools
+- `src/modules/prompt-trace.ts` - session-adjacent prompt trace artifacts for effective prompt, wire prompt, source manifest, and provider response metadata
 - `src/modules/request-debugger.ts` - reusable provider request debug helper
 
 This repo is now a package-style TypeScript base so other local Pi extensions can import selected helpers through normal npm `devDependencies` wiring.
@@ -60,6 +61,15 @@ Large debug payloads are debug artifacts, not session state.
 `RequestDebugger` writes full provider payloads next to the active Pi session file as `<session>.requests.jsonl`.
 If Pi is running without a persisted session file, it falls back to `.pi/playground/*.requests.jsonl` under the current project.
 
+`prompt-trace` writes agent-readable prompt artifacts next to the active Pi session file:
+
+- `<session>.system-prompt.txt` - actual sent prompt captured from `before_provider_request`
+- `<session>.effective-system-prompt.txt` - current runtime prompt from `ctx.getSystemPrompt()` at send time
+- `<session>.prompt-sources.json` - discoverable prompt inputs and active tool manifest
+- `<session>.provider-response.json` - latest `after_provider_response` status and headers
+
+If Pi is running without a persisted session file, it falls back to `.pi/playground/` under the current project.
+
 `PiuxTool` writes one full tmux output snapshot per `look` call to `/tmp/piux/.playground/look-*.txt`.
 `look screen`, `look diff`, `look full_output`, and `look last` all share that same saved full-output snapshot.
 
@@ -86,6 +96,7 @@ Docs naming split:
 - `piux_client` `do` sends literal text, named tmux keys, and optional Enter to fixed target `piux:pi.0`
 - `Playground` widget stays above the input box on the left while playground is active
 - request logging captures full pre-send provider payloads for Pi inspection
+- prompt tracing persists agent-readable prompt artifacts so the agent can inspect effective prompt, sent prompt, source inputs, and response metadata by reading files instead of relying on UI
 
 Leader is primary. Slash fallbacks exist for the same playground actions when `pi-leader` is unavailable.
 

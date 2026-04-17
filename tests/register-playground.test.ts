@@ -10,6 +10,7 @@ import {
 	PlaygroundExposureMessage,
 } from "../src/models/playground-exposure-message.ts";
 import { PLAYGROUND_STATE_TYPE } from "../src/models/playground-session-state.ts";
+import { getPromptTracePaths } from "../src/modules/prompt-trace.ts";
 
 type Entry =
 	| { type: "header"; id: string }
@@ -752,6 +753,7 @@ void test("actual prompt capture writes a system prompt sidecar on provider requ
 	t.after(harness.cleanup);
 
 	await harness.startSession();
+	const paths = getPromptTracePaths(join(harness.cwd, "session.jsonl"), harness.cwd);
 	await harness.emit("before_provider_request", {
 		type: "before_provider_request",
 		payload: {
@@ -759,6 +761,28 @@ void test("actual prompt capture writes a system prompt sidecar on provider requ
 		},
 	});
 
-	assert.equal(existsSync(join(harness.cwd, "session.system-prompt.txt")), true);
-	assert.equal(readFileSync(join(harness.cwd, "session.system-prompt.txt"), "utf8"), "wire truth");
+	assert.equal(existsSync(paths.actualPrompt), true);
+	assert.equal(readFileSync(paths.actualPrompt, "utf8"), "wire truth");
+	assert.equal(existsSync(paths.effectivePrompt), true);
+	assert.match(readFileSync(paths.effectivePrompt, "utf8"), /Built-in base prompt/);
+	assert.equal(existsSync(paths.sources), true);
+	assert.match(readFileSync(paths.sources, "utf8"), /"effectivePromptPath"/);
+});
+
+void test("provider response capture writes a response metadata sidecar", async (t) => {
+	const harness = createHarness();
+	t.after(harness.cleanup);
+
+	await harness.startSession();
+	const paths = getPromptTracePaths(join(harness.cwd, "session.jsonl"), harness.cwd);
+	await harness.emit("after_provider_response", {
+		type: "after_provider_response",
+		status: 200,
+		headers: {
+			"x-request-id": "abc",
+		},
+	});
+
+	assert.equal(existsSync(paths.providerResponse), true);
+	assert.match(readFileSync(paths.providerResponse, "utf8"), /"status": 200/);
 });

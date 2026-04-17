@@ -9,13 +9,27 @@ import {
 	PLAYGROUND_STATE_TYPE,
 	PlaygroundSessionState,
 } from "../models/playground-session-state.ts";
-import { captureActualPrompt } from "../modules/actual-prompt.ts";
 import { PiuxTool } from "../modules/piux-tool.ts";
 import { PromptNavigator } from "../modules/prompt-navigator.ts";
+import { capturePromptTrace, captureProviderResponse } from "../modules/prompt-trace.ts";
 import { RequestDebugger } from "../modules/request-debugger.ts";
 
 import { isPiLeaderOpenEvent } from "./pi-leader-event.ts";
 import { clearPlaygroundWidget, syncPlaygroundWidget } from "./widget.ts";
+
+type AfterProviderResponseEvent = {
+	status: number;
+	headers: Record<string, string>;
+};
+
+function onAfterProviderResponse(
+	pi: ExtensionAPI,
+	handler: (event: AfterProviderResponseEvent, ctx: ExtensionContext) => void,
+): void {
+	(pi as ExtensionAPI & {
+		on(name: string, handler: (event: unknown, ctx: ExtensionContext) => void): void;
+	}).on("after_provider_response", handler as never);
+}
 
 function getRequestLoggingLabel(state: PlaygroundSessionState): string {
 	return state.requestLogging ? "toggle request logging (on)" : "toggle request logging";
@@ -237,8 +251,15 @@ export function registerPlayground(pi: ExtensionAPI) {
 	});
 
 	pi.on("before_provider_request", async (event, nextCtx) => {
-		captureActualPrompt(event, nextCtx);
+		capturePromptTrace(event, nextCtx, {
+			activeToolNames: pi.getActiveTools(),
+			allTools: pi.getAllTools(),
+		});
 		await requestDebugger.recordBeforeProviderRequest(event, nextCtx);
+	});
+
+	onAfterProviderResponse(pi, (event, nextCtx) => {
+		captureProviderResponse(event, nextCtx);
 	});
 
 	pi.on("session_shutdown", () => {
