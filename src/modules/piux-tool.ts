@@ -9,8 +9,7 @@ import { Type } from "@sinclair/typebox";
 
 import { PiuxLookStore } from "../models/piux-look-store.ts";
 
-const PIUX_SOCKET = "piux";
-const PIUX_TARGET = "piux:pi.0";
+const PIUX_WORKSPACE_TITLE = "piux";
 const PIUX_TOOL_TIMEOUT = 5000;
 const DEFAULT_LAST_LINES = 20;
 const COLLAPSED_RESULT_LINES = 5;
@@ -31,6 +30,12 @@ type PiuxToolParams = {
 	text?: string;
 	keys?: string[];
 	enter?: boolean;
+};
+
+type PiuxWorkspace = {
+	id: string;
+	ref: string;
+	title: string;
 };
 
 function toTextResult(text: string, isError = false) {
@@ -263,6 +268,73 @@ function formatCallArgs(params: PiuxToolParams): string {
 	return `action=${params.action ?? "unknown"}`;
 }
 
+function normalizeCmuxKey(key: string): string | undefined {
+	switch (key.trim().toLowerCase()) {
+		case "enter":
+		case "return":
+			return "enter";
+		case "tab":
+			return "tab";
+		case "escape":
+		case "esc":
+			return "escape";
+		case "backspace":
+			return "backspace";
+		case "delete":
+		case "del":
+		case "forward_delete":
+			return "delete";
+		case "up":
+		case "arrow_up":
+		case "arrowup":
+			return "up";
+		case "down":
+		case "arrow_down":
+		case "arrowdown":
+			return "down";
+		case "left":
+		case "arrow_left":
+		case "arrowleft":
+			return "left";
+		case "right":
+		case "arrow_right":
+		case "arrowright":
+			return "right";
+		case "ctrl-c":
+		case "ctrl+c":
+		case "sigint":
+			return "ctrl-c";
+		case "ctrl-d":
+		case "ctrl+d":
+		case "eof":
+			return "ctrl-d";
+		case "ctrl-z":
+		case "ctrl+z":
+		case "sigtstp":
+			return "ctrl-z";
+		case "ctrl-\\":
+		case "ctrl+\\":
+		case "sigquit":
+			return "ctrl-\\";
+		case "home":
+			return "home";
+		case "end":
+			return "end";
+		case "pageup":
+		case "page_up":
+			return "page_up";
+		case "pagedown":
+		case "page_down":
+			return "page_down";
+		case "shift+tab":
+		case "shift-tab":
+		case "backtab":
+			return undefined;
+		default:
+			return undefined;
+	}
+}
+
 export class PiuxTool {
 	readonly artifactRoot: string;
 	readonly definition;
@@ -278,12 +350,12 @@ export class PiuxTool {
 		this.definition = defineTool({
 			name: PIUX_TOOL_NAME,
 			label: "Piux Client",
-			description: "Inspect and drive the fixed piux tmux session while playground is active.",
-			promptSnippet: "Inspect the fixed piux tmux pane with look, or drive it with do.",
+			description: "Inspect and drive the fixed piux cmux workspace while playground is active.",
+			promptSnippet: "Inspect the fixed piux cmux workspace with look, or drive it with do.",
 			promptGuidelines: [
 				"Use `piux_client` only when playground is active.",
-				"Use `look diff` for full-output changes, `screen` for the visible pane, `full_output` for complete tmux scrollback, and `last` for a compact tail.",
-				"Use `do` to send literal text, named tmux keys, and optional Enter to the fixed piux pane.",
+				"Use `look diff` for full-output changes, `screen` for the visible viewport, `full_output` for complete cmux scrollback, and `last` for a compact tail.",
+				"Use `do` to send literal text, named cmux keys, and optional Enter to the fixed piux workspace.",
 			],
 			parameters: Type.Object({
 				action: Type.String({
@@ -298,10 +370,11 @@ export class PiuxTool {
 					description: "For `look` mode `last`: number of non-empty lines to return.",
 				})),
 				text: Type.Optional(Type.String({
-					description: "For `do`: literal text to send to the pane.",
+					description: "For `do`: literal text to send to the workspace's selected terminal.",
 				})),
 				keys: Type.Optional(Type.Array(Type.String({
-					description: "For `do`: tmux key names to send, e.g. `Enter`, `Escape`, `Up`, `C-c`.",
+					description:
+						"For `do`: key names or literal key fragments to send, e.g. `Enter`, `Escape`, `Up`, `ctrl-c`, `[`, `Z`.",
 				}), { minItems: 1 })),
 				enter: Type.Optional(Type.Boolean({
 					description: "For `do`: whether to send Enter after text and keys.",
@@ -369,7 +442,8 @@ export class PiuxTool {
 		signal: AbortSignal | undefined,
 	) {
 		const mode = params.mode ?? "diff";
-		const snapshot = await this.captureSnapshot(signal);
+		const workspace = await this.resolveWorkspace(signal);
+		const snapshot = await this.captureSnapshot(workspace, signal);
 		const previous = this.#store.getPreviousSnapshot();
 		const path = await this.#store.saveSnapshot(snapshot);
 
@@ -378,7 +452,7 @@ export class PiuxTool {
 		}
 
 		if (mode === "screen") {
-			const screen = await this.captureVisible(signal);
+			const screen = await this.captureVisible(workspace, signal);
 			return toTextResult(`Saved ${path}\n\n${trimTrailingBlankLines(screen)}`);
 		}
 
@@ -413,6 +487,7 @@ export class PiuxTool {
 		params: PiuxToolParams,
 		signal: AbortSignal | undefined,
 	) {
+		const workspace = await this.resolveWorkspace(signal);
 		const text = typeof params.text === "string" && params.text.length > 0
 			? params.text
 			: undefined;
@@ -423,66 +498,118 @@ export class PiuxTool {
 		}
 
 		if (text) {
-			await this.runTmux(["send-keys", "-t", PIUX_TARGET, "-l", "--", text], signal);
+			await this.runCmux(["send", "--workspace", workspace.ref, text], signal);
 		}
 
 		if (keys.length > 0) {
-			await this.runTmux(["send-keys", "-t", PIUX_TARGET, ...keys], signal);
+			let literal = "";
+
+			const flushLiteral = async () => {
+				if (!literal) {
+					return;
+				}
+
+				await this.runCmux(["send", "--workspace", workspace.ref, literal], signal);
+				literal = "";
+			};
+
+			for (const key of keys) {
+				const cmuxKey = normalizeCmuxKey(key);
+				if (!cmuxKey) {
+					literal += key;
+					continue;
+				}
+
+				await flushLiteral();
+				await this.runCmux(["send-key", "--workspace", workspace.ref, cmuxKey], signal);
+			}
+
+			await flushLiteral();
 		}
 
 		if (enter) {
-			await this.runTmux(["send-keys", "-t", PIUX_TARGET, "Enter"], signal);
+			await this.runCmux(["send-key", "--workspace", workspace.ref, "enter"], signal);
 		}
 
 		return toTextResult(getDoSummary({ text, keys, enter }));
 	}
 
-	private async captureSnapshot(signal: AbortSignal | undefined): Promise<{
+	private async captureSnapshot(
+		workspace: PiuxWorkspace,
+		signal: AbortSignal | undefined,
+	): Promise<{
 		fullOutput: string;
 		paneHeight: number;
 	}> {
-		const heightResult = await this.runTmux([
-			"display-message",
-			"-p",
-			"-t",
-			PIUX_TARGET,
-			"#{pane_height}",
-		], signal);
-		const height = Number.parseInt(heightResult.stdout.trim(), 10);
-		if (!Number.isFinite(height) || height <= 0) {
-			throw new Error(`Invalid piux pane height: ${heightResult.stdout.trim()}`);
-		}
-
-		const result = await this.runTmux([
-			"capture-pane",
-			"-pt",
-			PIUX_TARGET,
-			"-S",
-			"-",
+		const result = await this.runCmux([
+			"read-screen",
+			"--workspace",
+			workspace.ref,
+			"--scrollback",
 		], signal);
 		return {
 			fullOutput: result.stdout,
-			paneHeight: height,
+			paneHeight: 0,
 		};
 	}
 
-	private async captureVisible(signal: AbortSignal | undefined): Promise<string> {
-		const result = await this.runTmux(["capture-pane", "-pt", PIUX_TARGET], signal);
+	private async captureVisible(
+		workspace: PiuxWorkspace,
+		signal: AbortSignal | undefined,
+	): Promise<string> {
+		const result = await this.runCmux([
+			"read-screen",
+			"--workspace",
+			workspace.ref,
+		], signal);
 		return result.stdout;
 	}
 
-	private async runTmux(args: string[], signal: AbortSignal | undefined): Promise<ExecResult> {
+	private async resolveWorkspace(signal: AbortSignal | undefined): Promise<PiuxWorkspace> {
+		const result = await this.runCmux(["rpc", "workspace.list", "{}"], signal);
+
+		let payload: unknown;
+		try {
+			payload = JSON.parse(result.stdout);
+		} catch {
+			throw new Error("cmux returned invalid JSON for workspace.list");
+		}
+
+		const workspaces = Array.isArray((payload as { workspaces?: unknown }).workspaces)
+			? (payload as { workspaces: Array<Record<string, unknown>> }).workspaces
+			: [];
+		const matches = workspaces
+			.map((workspace) => ({
+				id: typeof workspace.id === "string" ? workspace.id : "",
+				ref: typeof workspace.ref === "string" ? workspace.ref : "",
+				title: typeof workspace.title === "string" ? workspace.title : "",
+			}))
+			.filter((workspace) => workspace.title === PIUX_WORKSPACE_TITLE);
+
+		const match = matches[0];
+		if (matches.length === 1 && match) {
+			return match;
+		}
+
+		if (matches.length > 1) {
+			throw new Error("Multiple cmux workspaces are titled `piux`");
+		}
+
+		throw new Error("cmux workspace `piux` not found");
+	}
+
+	private async runCmux(args: string[], signal: AbortSignal | undefined): Promise<ExecResult> {
 		const options: ExecOptions = { timeout: this.#timeout };
 		if (signal) {
 			options.signal = signal;
 		}
 
-		const result = await this.#host.exec("tmux", ["-L", PIUX_SOCKET, ...args], options);
+		const result = await this.#host.exec("cmux", args, options);
 		if (result.code === 0) {
 			return result;
 		}
 
-		const message = result.stderr.trim() || result.stdout.trim() || `tmux exited ${result.code}`;
+		const message = result.stderr.trim() || result.stdout.trim() || `cmux exited ${result.code}`;
 		throw new Error(message);
 	}
 }
