@@ -612,7 +612,7 @@ void test("activating playground injects one visible exposure message with sessi
 	assert.equal(exposures[0]?.display, true);
 	assert.match(exposures[0]?.content ?? "", /session-123/);
 	assert.match(exposures[0]?.content ?? "", /session\.jsonl/);
-	assert.match(exposures[0]?.content ?? "", /@docs\/piux\.md/);
+	assert.match(exposures[0]?.content ?? "", /@docs\/playground-mode\.md/);
 	assert.equal(harness.renderers.has(PLAYGROUND_EXPOSURE_TYPE), true);
 });
 
@@ -675,7 +675,7 @@ void test("exposure message renderer collapses to 3 lines and expands to the ful
 		"Playground session context",
 		"Session ID: session-123",
 		`Session file: ${join(harness.cwd, "session.jsonl")}`,
-		"Runbook: @docs/piux.md",
+		"Runbook: @docs/playground-mode.md",
 	]);
 });
 

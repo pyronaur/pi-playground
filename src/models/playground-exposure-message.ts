@@ -1,7 +1,7 @@
 import type { SessionEntry } from "@mariozechner/pi-coding-agent";
 
 export const PLAYGROUND_EXPOSURE_TYPE = "playground-exposure";
-const PLAYGROUND_RUNBOOK = "@docs/piux.md";
+const PLAYGROUND_RUNBOOK = "@docs/playground-mode.md";
 const PLAYGROUND_ROOT_COMPACTION_ID = "root";
 
 type PlaygroundExposureInput = {
