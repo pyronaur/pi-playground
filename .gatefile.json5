@@ -13,7 +13,6 @@
 			],
 			guidance: [
 				"Review the markdown diff.",
-				"Ask the user for approval, then call gate_suppress with --allow-protected-markdown.",
 			],
 			status: "fail",
 		},
