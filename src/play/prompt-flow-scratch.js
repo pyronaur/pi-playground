@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 const INTERESTING_INPUTS = new Map([
@@ -44,6 +44,7 @@ function sessionLogPath(ctx) {
 function setLogPath(ctx) {
 	logPath = sessionLogPath(ctx);
 	mkdirSync(dirname(logPath), { recursive: true });
+	writeFileSync(logPath, "", { flag: "a" });
 }
 
 function entry(event, data = {}) {
@@ -151,14 +152,6 @@ function recordLifecycle(name, event, ctx, options) {
 	write(name, summarizeEvent(event));
 }
 
-function resetLog(ctx) {
-	currentCtx = ctx ?? currentCtx;
-	setLogPath(currentCtx);
-	rmSync(logPath, { force: true });
-	seq = 0;
-	write("log_reset");
-}
-
 export default function registerPromptFlowScratch(pi, options = {}) {
 	for (const name of LIFECYCLE_EVENTS) {
 		pi.on(name, (event, ctx) => recordLifecycle(name, event, ctx, options));
@@ -168,41 +161,10 @@ export default function registerPromptFlowScratch(pi, options = {}) {
 		recordLifecycle("before_provider_request", event, ctx, options);
 	});
 
-	pi.registerCommand("flow-log-path", {
-		description: "Show prompt-flow scratch log path",
-		handler: async (_args, ctx) => {
-			currentCtx = ctx;
-			setLogPath(ctx);
-			ctx.ui.notify(logPath, "info");
-		},
-	});
-
-	pi.registerCommand("flow-log-reset", {
-		description: "Reset prompt-flow scratch log",
-		handler: async (_args, ctx) => {
-			resetLog(ctx);
-			ctx.ui.notify(`prompt-flow log reset -> ${logPath}`, "info");
-		},
-	});
-
-	pi.registerCommand("flow-log-mark", {
-		description: "Add a marker to the prompt-flow scratch log",
-		handler: async (args, ctx) => {
-			currentCtx = ctx;
-			setLogPath(ctx);
-			write("mark", { text: compactText(args.join(" ")) });
-		},
-	});
-
 	process.once("exit", () => {
 		inputOff?.();
 		inputOff = undefined;
 	});
 
-	if (!logPath) {
-		const fallback = join(process.cwd(), ".pi", "playground", "prompt-flow.jsonl");
-		mkdirSync(dirname(fallback), { recursive: true });
-		writeFileSync(fallback, "", { flag: "a" });
-		logPath = fallback;
-	}
+	setLogPath(currentCtx);
 }
