@@ -122,16 +122,16 @@ export function registerPlayground(pi: ExtensionAPI) {
 	}
 
 	function activatePlayground(): void {
-		if (state.active) {
-			return;
-		}
-
 		setState(state.with({ active: true }));
+	}
+
+	function togglePlayground(): void {
+		setState(state.with({ active: !state.active }));
 	}
 
 	function toggleRequestLogging(): boolean {
 		if (!state.active) {
-			ctx?.ui.notify("Activate playground first with /playground-activate", "warning");
+			ctx?.ui.notify("Activate playground first with /playground", "warning");
 			return false;
 		}
 
@@ -141,7 +141,7 @@ export function registerPlayground(pi: ExtensionAPI) {
 
 	async function openPromptNavigator(nextCtx: ExtensionContext | undefined): Promise<boolean> {
 		if (!state.active) {
-			nextCtx?.ui.notify("Activate playground first with /playground-activate", "warning");
+			nextCtx?.ui.notify("Activate playground first with /playground", "warning");
 			return false;
 		}
 
@@ -153,11 +153,11 @@ export function registerPlayground(pi: ExtensionAPI) {
 		return true;
 	}
 
-	pi.registerCommand("playground-activate", {
-		description: "Activate playground for this session",
+	pi.registerCommand("playground", {
+		description: "Toggle playground for this session",
 		handler: async (_args, nextCtx) => {
 			ctx = nextCtx;
-			activatePlayground();
+			togglePlayground();
 		},
 	});
 

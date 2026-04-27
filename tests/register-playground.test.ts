@@ -467,7 +467,7 @@ void test("playground is inactive by default and exposes fallback slash commands
 	await harness.startSession();
 
 	assert.deepEqual([...harness.commands.keys()].sort(), [
-		"playground-activate",
+		"playground",
 		"playground-toggle-request-logging",
 		"system-prompt",
 		"system-view",
@@ -495,17 +495,26 @@ void test("playground is inactive by default and exposes fallback slash commands
 		false);
 });
 
-void test("slash command activates inactive playground without leader", async (t) => {
+void test("slash command toggles playground without leader", async (t) => {
 	const harness = createHarness();
 	t.after(harness.cleanup);
 
 	await harness.startSession();
-	await harness.runCommand("playground-activate");
+	await harness.runCommand("playground");
 
 	assert.equal(harness.widgets.has("pi-playground"), true);
 	assert.equal(harness.activeTools.current.includes("pp"), true);
 	assert.deepEqual(getLatestState(harness.entries)?.data, {
 		active: true,
+		requestLogging: false,
+	});
+
+	await harness.runCommand("playground");
+
+	assert.equal(harness.widgets.has("pi-playground"), false);
+	assert.equal(harness.activeTools.current.includes("pp"), false);
+	assert.deepEqual(getLatestState(harness.entries)?.data, {
+		active: false,
 		requestLogging: false,
 	});
 });
