@@ -22,6 +22,10 @@ type AfterProviderResponseEvent = {
 	headers: Record<string, string>;
 };
 
+type PlayScratchModule = {
+	default?: (pi: ExtensionAPI, options: { isActive(): boolean }) => void;
+};
+
 function onAfterProviderResponse(
 	pi: ExtensionAPI,
 	handler: (event: AfterProviderResponseEvent, ctx: ExtensionContext) => void,
@@ -51,6 +55,7 @@ export function registerPlayground(pi: ExtensionAPI) {
 	let ctx: ExtensionContext | undefined;
 	let state = PlaygroundSessionState.inactive();
 	let offLeader: (() => void) | undefined;
+	let playScratchLoaded = false;
 	pi.registerTool(ppTool.definition);
 	pi.registerMessageRenderer(PLAYGROUND_EXPOSURE_TYPE, (message, { expanded }, theme) => {
 		const exposure = PlaygroundExposureMessage.fromUnknown(message.details);
@@ -79,6 +84,22 @@ export function registerPlayground(pi: ExtensionAPI) {
 		syncPlaygroundWidget(ctx, state);
 	}
 
+	async function ensurePlayScratch(): Promise<void> {
+		if (playScratchLoaded) {
+			return;
+		}
+		playScratchLoaded = true;
+		try {
+			const scratchUrl = new URL("../play/prompt-flow-scratch.js", import.meta.url).href;
+			const module = await import(scratchUrl) as PlayScratchModule;
+			module.default?.(pi, { isActive: () => state.active });
+		} catch (error) {
+			playScratchLoaded = false;
+			const message = error instanceof Error ? error.message : String(error);
+			ctx?.ui.notify(`play scratch failed: ${message}`, "error");
+		}
+	}
+
 	function setState(next: PlaygroundSessionState): void {
 		const changed = next.active !== state.active || next.requestLogging !== state.requestLogging;
 		const activeChanged = next.active !== state.active;
@@ -98,6 +119,7 @@ export function registerPlayground(pi: ExtensionAPI) {
 			requestDebugger.setEnabled(state.requestLogging, ctx);
 		}
 		if (activeChanged && state.active && ctx) {
+			void ensurePlayScratch();
 			ensureExposure(ctx);
 		}
 	}
@@ -226,6 +248,7 @@ export function registerPlayground(pi: ExtensionAPI) {
 		syncUi();
 		requestDebugger.onSessionStart(state.requestLogging, event, nextCtx);
 		if (state.active) {
+			void ensurePlayScratch();
 			ensureExposure(nextCtx);
 		}
 	});
