@@ -110,5 +110,4 @@ Leader is primary. Slash fallbacks exist for the same playground actions when `p
 
 ## Gate protection rules
 
-- `src/play/*` stays out of automatic commit flow. Gate requires `--allow-play` after manual review.
 - Markdown files are protected except `README.md`. Gate requires `--allow-protected-markdown` after manual review.

@@ -1,26 +1,6 @@
 {
 	$use: "./node_modules/.bin",
 
-	play_review: {
-		name: "Review scratch play changes",
-		// src/play is disposable experiment space. Never auto-commit it without explicit human approval.
-		match: "src/play/**/*.{js,cjs,mjs}",
-		run: {
-			label: "Review scratch play changes",
-			message: [
-				"Scratch experiments changed under src/play.",
-				"These files stay outside automatic commit flow.",
-			],
-			guidance: [
-				"Review the play diff.",
-				"Re-run gate with --allow-play when manual review is done.",
-			],
-			status: "fail",
-		},
-		suppress: "--allow-play",
-		critical: true,
-	},
-
 	markdown_review: {
 		name: "Review protected markdown",
 		// README stays auto-committable. Other markdown requires explicit human review.
@@ -33,7 +13,7 @@
 			],
 			guidance: [
 				"Review the markdown diff.",
-				"Re-run gate with --allow-protected-markdown when review is done.",
+				"Ask the user for approval, then call gate_suppress with --allow-protected-markdown.",
 			],
 			status: "fail",
 		},
