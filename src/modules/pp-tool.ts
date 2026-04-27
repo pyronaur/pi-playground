@@ -7,35 +7,30 @@ import {
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
-import { PiuxLookStore } from "../models/piux-look-store.ts";
+import { PpLookStore } from "../models/pp-look-store.ts";
 
-const PIUX_WORKSPACE_TITLE = "piux";
-const PIUX_TOOL_TIMEOUT = 5000;
+const PP_TOOL_TIMEOUT = 5000;
 const DEFAULT_LAST_LINES = 20;
 const COLLAPSED_RESULT_LINES = 5;
+const DEFAULT_SPLIT_DIRECTION = "right";
 
-const PIUX_TOOL_NAME = "piux_client";
+const PP_TOOL_NAME = "pp";
 
-type PiuxToolHost = Pick<ExtensionAPI, "exec" | "getActiveTools" | "setActiveTools">;
+type PpToolHost = Pick<ExtensionAPI, "exec" | "getActiveTools" | "setActiveTools">;
 
-type PiuxToolOptions = {
+type PpToolOptions = {
 	artifactRoot?: string;
+	originSurfaceId?: string;
 	timeout?: number;
 };
 
-type PiuxToolParams = {
+type PpToolParams = {
 	action?: string;
 	mode?: string;
 	lines?: number;
 	text?: string;
 	keys?: string[];
 	enter?: boolean;
-};
-
-type PiuxWorkspace = {
-	id: string;
-	ref: string;
-	title: string;
 };
 
 function toTextResult(text: string, isError = false) {
@@ -242,7 +237,7 @@ function getDoSummary(input: {
 	return `sent ${parts.join(", ")}`;
 }
 
-function formatCallArgs(params: PiuxToolParams): string {
+function formatCallArgs(params: PpToolParams): string {
 	if (params.action === "look") {
 		const parts = [`action=${params.action}`, `mode=${params.mode ?? "diff"}`];
 		if (typeof params.lines === "number") {
@@ -335,27 +330,41 @@ function normalizeCmuxKey(key: string): string | undefined {
 	}
 }
 
-export class PiuxTool {
+function parseSplitSurface(output: string): string {
+	const surface = /\bsurface:[^\s]+/u.exec(output)?.[0];
+	if (!surface) {
+		throw new Error("cmux new-split did not return a surface id");
+	}
+
+	return surface;
+}
+
+export class PpTool {
 	readonly artifactRoot: string;
 	readonly definition;
-	readonly #host: PiuxToolHost;
+	readonly #host: PpToolHost;
+	readonly #originSurface: string | undefined;
+	#targetSurface: string | undefined;
 	readonly #timeout: number;
-	readonly #store: PiuxLookStore;
+	readonly #store: PpLookStore;
 
-	constructor(host: PiuxToolHost, options: PiuxToolOptions = {}) {
+	constructor(host: PpToolHost, options: PpToolOptions = {}) {
 		this.#host = host;
-		this.#timeout = options.timeout ?? PIUX_TOOL_TIMEOUT;
-		this.#store = new PiuxLookStore(options.artifactRoot);
+		this.#originSurface = options.originSurfaceId ?? process.env.CMUX_SURFACE_ID;
+		this.#timeout = options.timeout ?? PP_TOOL_TIMEOUT;
+		this.#store = new PpLookStore(options.artifactRoot);
 		this.artifactRoot = this.#store.root;
 		this.definition = defineTool({
-			name: PIUX_TOOL_NAME,
-			label: "Piux Client",
-			description: "Inspect and drive the fixed piux cmux workspace while playground is active.",
-			promptSnippet: "Inspect the fixed piux cmux workspace with look, or drive it with do.",
+			name: PP_TOOL_NAME,
+			label: "PP Tool",
+			description:
+				"Inspect and drive an attached cmux playground pane while Playground Mode is active.",
+			promptSnippet: "Use pp to inspect or drive the attached cmux playground pane.",
 			promptGuidelines: [
-				"Use `piux_client` only when playground is active.",
+				"Use `pp` only when Playground Mode is active.",
+				"The first call creates one cmux split from the origin Pi surface when no playground pane is attached yet.",
 				"Use `look diff` for full-output changes, `screen` for the visible viewport, `full_output` for complete cmux scrollback, and `last` for a compact tail.",
-				"Use `do` to send literal text, named cmux keys, and optional Enter to the fixed piux workspace.",
+				"Use `do` to send literal text, named cmux keys, and optional Enter to the attached playground pane.",
 			],
 			parameters: Type.Object({
 				action: Type.String({
@@ -370,7 +379,7 @@ export class PiuxTool {
 					description: "For `look` mode `last`: number of non-empty lines to return.",
 				})),
 				text: Type.Optional(Type.String({
-					description: "For `do`: literal text to send to the workspace's selected terminal.",
+					description: "For `do`: literal text to send to the attached playground pane.",
 				})),
 				keys: Type.Optional(Type.Array(Type.String({
 					description:
@@ -382,7 +391,7 @@ export class PiuxTool {
 			}),
 			execute: async (_toolCallId, params, signal) => await this.execute(params, signal),
 			renderCall(args, theme) {
-				const text = theme.fg("toolTitle", theme.bold("piux_client "))
+				const text = theme.fg("toolTitle", theme.bold("pp "))
 					+ theme.fg("muted", formatCallArgs(args));
 				return new Text(text, 0, 0);
 			},
@@ -408,17 +417,17 @@ export class PiuxTool {
 	syncActive(enabled: boolean): void {
 		const activeTools = new Set(this.#host.getActiveTools());
 		if (enabled) {
-			activeTools.add(PIUX_TOOL_NAME);
+			activeTools.add(PP_TOOL_NAME);
 			this.#host.setActiveTools([...activeTools]);
 			return;
 		}
 
-		activeTools.delete(PIUX_TOOL_NAME);
+		activeTools.delete(PP_TOOL_NAME);
 		this.#host.setActiveTools([...activeTools]);
 	}
 
 	private async execute(
-		params: PiuxToolParams,
+		params: PpToolParams,
 		signal: AbortSignal | undefined,
 	) {
 		try {
@@ -438,12 +447,12 @@ export class PiuxTool {
 	}
 
 	private async look(
-		params: PiuxToolParams,
+		params: PpToolParams,
 		signal: AbortSignal | undefined,
 	) {
 		const mode = params.mode ?? "diff";
-		const workspace = await this.resolveWorkspace(signal);
-		const snapshot = await this.captureSnapshot(workspace, signal);
+		const surface = await this.resolveTargetSurface(signal);
+		const snapshot = await this.captureSnapshot(surface, signal);
 		const previous = this.#store.getPreviousSnapshot();
 		const path = await this.#store.saveSnapshot(snapshot);
 
@@ -452,7 +461,7 @@ export class PiuxTool {
 		}
 
 		if (mode === "screen") {
-			const screen = await this.captureVisible(workspace, signal);
+			const screen = await this.captureVisible(surface, signal);
 			return toTextResult(`Saved ${path}\n\n${trimTrailingBlankLines(screen)}`);
 		}
 
@@ -484,10 +493,10 @@ export class PiuxTool {
 	}
 
 	private async do(
-		params: PiuxToolParams,
+		params: PpToolParams,
 		signal: AbortSignal | undefined,
 	) {
-		const workspace = await this.resolveWorkspace(signal);
+		const surface = await this.resolveTargetSurface(signal);
 		const text = typeof params.text === "string" && params.text.length > 0
 			? params.text
 			: undefined;
@@ -498,7 +507,7 @@ export class PiuxTool {
 		}
 
 		if (text) {
-			await this.runCmux(["send", "--workspace", workspace.ref, text], signal);
+			await this.runCmux(["send-surface", "--surface", surface, text], signal);
 		}
 
 		if (keys.length > 0) {
@@ -509,7 +518,7 @@ export class PiuxTool {
 					return;
 				}
 
-				await this.runCmux(["send", "--workspace", workspace.ref, literal], signal);
+				await this.runCmux(["send-surface", "--surface", surface, literal], signal);
 				literal = "";
 			};
 
@@ -521,21 +530,21 @@ export class PiuxTool {
 				}
 
 				await flushLiteral();
-				await this.runCmux(["send-key", "--workspace", workspace.ref, cmuxKey], signal);
+				await this.runCmux(["send-key-surface", "--surface", surface, cmuxKey], signal);
 			}
 
 			await flushLiteral();
 		}
 
 		if (enter) {
-			await this.runCmux(["send-key", "--workspace", workspace.ref, "enter"], signal);
+			await this.runCmux(["send-key-surface", "--surface", surface, "enter"], signal);
 		}
 
 		return toTextResult(getDoSummary({ text, keys, enter }));
 	}
 
 	private async captureSnapshot(
-		workspace: PiuxWorkspace,
+		surface: string,
 		signal: AbortSignal | undefined,
 	): Promise<{
 		fullOutput: string;
@@ -543,8 +552,8 @@ export class PiuxTool {
 	}> {
 		const result = await this.runCmux([
 			"read-screen",
-			"--workspace",
-			workspace.ref,
+			"--surface",
+			surface,
 			"--scrollback",
 		], signal);
 		return {
@@ -554,48 +563,34 @@ export class PiuxTool {
 	}
 
 	private async captureVisible(
-		workspace: PiuxWorkspace,
+		surface: string,
 		signal: AbortSignal | undefined,
 	): Promise<string> {
 		const result = await this.runCmux([
 			"read-screen",
-			"--workspace",
-			workspace.ref,
+			"--surface",
+			surface,
 		], signal);
 		return result.stdout;
 	}
 
-	private async resolveWorkspace(signal: AbortSignal | undefined): Promise<PiuxWorkspace> {
-		const result = await this.runCmux(["rpc", "workspace.list", "{}"], signal);
-
-		let payload: unknown;
-		try {
-			payload = JSON.parse(result.stdout);
-		} catch {
-			throw new Error("cmux returned invalid JSON for workspace.list");
+	private async resolveTargetSurface(signal: AbortSignal | undefined): Promise<string> {
+		if (this.#targetSurface) {
+			return this.#targetSurface;
+		}
+		if (!this.#originSurface) {
+			throw new Error("CMUX_SURFACE_ID is not set; pp must run from a cmux surface");
 		}
 
-		const workspaces = Array.isArray((payload as { workspaces?: unknown }).workspaces)
-			? (payload as { workspaces: Array<Record<string, unknown>> }).workspaces
-			: [];
-		const matches = workspaces
-			.map((workspace) => ({
-				id: typeof workspace.id === "string" ? workspace.id : "",
-				ref: typeof workspace.ref === "string" ? workspace.ref : "",
-				title: typeof workspace.title === "string" ? workspace.title : "",
-			}))
-			.filter((workspace) => workspace.title === PIUX_WORKSPACE_TITLE);
-
-		const match = matches[0];
-		if (matches.length === 1 && match) {
-			return match;
-		}
-
-		if (matches.length > 1) {
-			throw new Error("Multiple cmux workspaces are titled `piux`");
-		}
-
-		throw new Error("cmux workspace `piux` not found");
+		const result = await this.runCmux([
+			"new-split",
+			DEFAULT_SPLIT_DIRECTION,
+			"--surface",
+			this.#originSurface,
+		], signal);
+		const surface = parseSplitSurface(result.stdout);
+		this.#targetSurface = surface;
+		return surface;
 	}
 
 	private async runCmux(args: string[], signal: AbortSignal | undefined): Promise<ExecResult> {

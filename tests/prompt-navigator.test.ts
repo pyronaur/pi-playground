@@ -77,7 +77,7 @@ void test("createPromptNavigatorData includes effective prompt, file-backed sour
 				source: "payload.instructions",
 				path: join(root, "session.system-prompt.txt"),
 			},
-			activeToolNames: ["read", "piux_client"],
+			activeToolNames: ["read", "pp"],
 			allTools: [
 				{
 					name: "read",
@@ -86,10 +86,10 @@ void test("createPromptNavigatorData includes effective prompt, file-backed sour
 					sourceInfo: { path: "/tools/read.ts" },
 				},
 				{
-					name: "piux_client",
-					description: "Drive piux",
+					name: "pp",
+					description: "Drive the playground pane",
 					parameters: { type: "object" },
-					sourceInfo: { path: "/tools/piux.ts" },
+					sourceInfo: { path: "/tools/pp.ts" },
 				},
 				{
 					name: "bash",
@@ -113,7 +113,7 @@ void test("createPromptNavigatorData includes effective prompt, file-backed sour
 	assert.equal(data.systemItems.some((item) => item.path === repoAgents), true);
 	assert.equal(data.systemItems.some((item) => item.id === "skills-block"), true);
 	assert.equal(data.systemItems.some((item) => item.id === "runtime-footer"), true);
-	assert.deepEqual(data.toolItems.map((item) => item.id), ["tool:read", "tool:piux_client"]);
+	assert.deepEqual(data.toolItems.map((item) => item.id), ["tool:read", "tool:pp"]);
 
 	rmSync(root, { recursive: true, force: true });
 });

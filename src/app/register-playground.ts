@@ -9,7 +9,7 @@ import {
 	PLAYGROUND_STATE_TYPE,
 	PlaygroundSessionState,
 } from "../models/playground-session-state.ts";
-import { PiuxTool } from "../modules/piux-tool.ts";
+import { PpTool } from "../modules/pp-tool.ts";
 import { PromptNavigator } from "../modules/prompt-navigator.ts";
 import { capturePromptTrace, captureProviderResponse } from "../modules/prompt-trace.ts";
 import { RequestDebugger } from "../modules/request-debugger.ts";
@@ -45,13 +45,13 @@ function getExposureLines(message: PlaygroundExposureMessage): string[] {
 }
 
 export function registerPlayground(pi: ExtensionAPI) {
-	const piuxTool = new PiuxTool(pi);
+	const ppTool = new PpTool(pi);
 	const promptNavigator = new PromptNavigator(pi);
 	const requestDebugger = new RequestDebugger();
 	let ctx: ExtensionContext | undefined;
 	let state = PlaygroundSessionState.inactive();
 	let offLeader: (() => void) | undefined;
-	pi.registerTool(piuxTool.definition);
+	pi.registerTool(ppTool.definition);
 	pi.registerMessageRenderer(PLAYGROUND_EXPOSURE_TYPE, (message, { expanded }, theme) => {
 		const exposure = PlaygroundExposureMessage.fromUnknown(message.details);
 		const lines = exposure
@@ -89,7 +89,7 @@ export function registerPlayground(pi: ExtensionAPI) {
 		}
 
 		if (activeChanged) {
-			piuxTool.syncActive(state.active);
+			ppTool.syncActive(state.active);
 		}
 
 		pi.appendEntry(PLAYGROUND_STATE_TYPE, state.toData());
@@ -221,7 +221,7 @@ export function registerPlayground(pi: ExtensionAPI) {
 	pi.on("session_start", (event, nextCtx) => {
 		ctx = nextCtx;
 		state = PlaygroundSessionState.load(nextCtx.sessionManager.getEntries());
-		piuxTool.syncActive(state.active);
+		ppTool.syncActive(state.active);
 		attachLeader();
 		syncUi();
 		requestDebugger.onSessionStart(state.requestLogging, event, nextCtx);

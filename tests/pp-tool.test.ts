@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { PiuxTool } from "../src/modules/piux-tool.ts";
+import { PpTool } from "../src/modules/pp-tool.ts";
 
 type ExecCall = {
 	command: string;
@@ -18,7 +18,7 @@ function createExecHarness(
 	const execCalls: ExecCall[] = [];
 	const activeTools = ["read", "bash"];
 	const queue = [...responses];
-	const tool = new PiuxTool({
+	const tool = new PpTool({
 		exec: async (command, args, options) => {
 			execCalls.push({
 				command,
@@ -38,14 +38,15 @@ function createExecHarness(
 			activeTools.splice(0, activeTools.length, ...next);
 		},
 	}, {
-		artifactRoot: mkdtempSync(join(tmpdir(), "piux-tool-")),
+		artifactRoot: mkdtempSync(join(tmpdir(), "pp-tool-")),
+		originSurfaceId: "surface:origin",
 	});
 
 	return { tool, execCalls, activeTools, artifactRoot: tool.artifactRoot };
 }
 
 async function runTool(
-	tool: PiuxTool,
+	tool: PpTool,
 	params: Record<string, unknown>,
 ) {
 	return await tool.definition.execute(
@@ -57,7 +58,7 @@ async function runTool(
 	);
 }
 
-function renderResultText(tool: PiuxTool, input: { text: string; expanded?: boolean }): string[] {
+function renderResultText(tool: PpTool, input: { text: string; expanded?: boolean }): string[] {
 	const component = tool.definition.renderResult?.(
 		{
 			content: [{ type: "text", text: input.text }],
@@ -73,7 +74,7 @@ function renderResultText(tool: PiuxTool, input: { text: string; expanded?: bool
 	return component.render(120).map((line) => line.trimEnd());
 }
 
-function renderCallText(tool: PiuxTool, args: Record<string, unknown>): string[] {
+function renderCallText(tool: PpTool, args: Record<string, unknown>): string[] {
 	const component = tool.definition.renderCall?.(
 		args,
 		{
@@ -91,27 +92,32 @@ function renderCallText(tool: PiuxTool, args: Record<string, unknown>): string[]
 	return component.render(200).map((line) => line.trimEnd());
 }
 
-function assertFullCaptureCalls(execCalls: ExecCall[]): void {
-	assert.deepEqual(execCalls.map((call) => [call.command, call.args]), [
-		["tmux", ["-L", "piux", "display-message", "-p", "-t", "piux:pi.0", "#{pane_height}"]],
-		["tmux", ["-L", "piux", "capture-pane", "-pt", "piux:pi.0", "-S", "-"]],
-	]);
+function splitResponse(): { stdout: string } {
+	return { stdout: "OK surface:attached workspace:74\n" };
 }
 
-void test("syncActive adds and removes piux_client without dropping other tools", (t) => {
+function assertFirstSplit(execCalls: ExecCall[]): void {
+	assert.deepEqual(execCalls[0], {
+		command: "cmux",
+		args: ["new-split", "right", "--surface", "surface:origin"],
+		options: { timeout: 5000 },
+	});
+}
+
+void test("syncActive adds and removes pp without dropping other tools", (t) => {
 	const { tool, activeTools, artifactRoot } = createExecHarness([]);
 	t.after(() => rmSync(artifactRoot, { recursive: true, force: true }));
 
 	tool.syncActive(true);
-	assert.deepEqual(activeTools, ["read", "bash", "piux_client"]);
+	assert.deepEqual(activeTools, ["read", "bash", "pp"]);
 
 	tool.syncActive(false);
 	assert.deepEqual(activeTools, ["read", "bash"]);
 });
 
-void test("look screen returns visible viewport capture and saves full output", async (t) => {
+void test("look screen creates one split, captures visible output, and saves full output", async (t) => {
 	const { tool, execCalls, artifactRoot } = createExecHarness([
-		{ stdout: "3\n" },
+		splitResponse(),
 		{ stdout: "history-1\nhistory-2\nscreen-1\nscreen-2\nscreen-3\n" },
 		{ stdout: "visible-1\nvisible-2\nvisible-3\n" },
 	]);
@@ -121,9 +127,9 @@ void test("look screen returns visible viewport capture and saves full output", 
 	const text = result.content[0]?.type === "text" ? result.content[0].text : "";
 
 	assert.deepEqual(execCalls.map((call) => [call.command, call.args]), [
-		["tmux", ["-L", "piux", "display-message", "-p", "-t", "piux:pi.0", "#{pane_height}"]],
-		["tmux", ["-L", "piux", "capture-pane", "-pt", "piux:pi.0", "-S", "-"]],
-		["tmux", ["-L", "piux", "capture-pane", "-pt", "piux:pi.0"]],
+		["cmux", ["new-split", "right", "--surface", "surface:origin"]],
+		["cmux", ["read-screen", "--surface", "surface:attached", "--scrollback"]],
+		["cmux", ["read-screen", "--surface", "surface:attached"]],
 	]);
 	assert.match(text, /visible-1\nvisible-2\nvisible-3/);
 	assert.match(text, /look-1\.txt/);
@@ -131,9 +137,9 @@ void test("look screen returns visible viewport capture and saves full output", 
 		"history-1\nhistory-2\nscreen-1\nscreen-2\nscreen-3\n");
 });
 
-void test("look full_output returns complete tmux scrollback and saves one snapshot", async (t) => {
+void test("look full_output returns complete cmux scrollback and saves one snapshot", async (t) => {
 	const { tool, execCalls, artifactRoot } = createExecHarness([
-		{ stdout: "2\n" },
+		splitResponse(),
 		{ stdout: "history-1\nhistory-2\nscreen-1\nscreen-2\n" },
 	]);
 	t.after(() => rmSync(artifactRoot, { recursive: true, force: true }));
@@ -141,25 +147,29 @@ void test("look full_output returns complete tmux scrollback and saves one snaps
 	const result = await runTool(tool, { action: "look", mode: "full_output" });
 	const text = result.content[0]?.type === "text" ? result.content[0].text : "";
 
-	assertFullCaptureCalls(execCalls);
+	assertFirstSplit(execCalls);
+	assert.deepEqual(execCalls[1]?.args, [
+		"read-screen",
+		"--surface",
+		"surface:attached",
+		"--scrollback",
+	]);
 	assert.match(text, /history-1\nhistory-2\nscreen-1\nscreen-2/);
 	assert.equal(readFileSync(join(artifactRoot, "look-1.txt"), "utf8"),
 		"history-1\nhistory-2\nscreen-1\nscreen-2\n");
 });
 
-void test("look diff compares full output, ignores footer chrome, and keeps transcript after earlier separators", async (t) => {
-	const { tool, artifactRoot } = createExecHarness([
-		{ stdout: "80\n" },
+void test("look diff compares full output, ignores footer chrome, and reuses the split", async (t) => {
+	const { tool, execCalls, artifactRoot } = createExecHarness([
+		splitResponse(),
 		{
 			stdout:
 				"alpha\n────────────────\nbranch note\n\nG.\n\n────────────────\n\n────────────────\n/path\nstatus\n",
 		},
-		{ stdout: "80\n" },
 		{
 			stdout:
 				"alpha\n────────────────\nbranch note\n\nG.\n\nH prompt\n\n ⠴ Working...\n\n────────────────\n\n────────────────\n/path\nstatus\n",
 		},
-		{ stdout: "80\n" },
 		{
 			stdout:
 				"alpha\n────────────────\nbranch note\n\nG.\n\nH prompt\n\nH.\n\n────────────────\n\n────────────────\n/path\nstatus\n",
@@ -182,21 +192,19 @@ void test("look diff compares full output, ignores footer chrome, and keeps tran
 	const thirdText = third.content[0]?.type === "text" ? third.content[0].text : "";
 	assert.match(thirdText, /@@ line 9/);
 	assert.match(thirdText, /\+ H\./);
-	assert.equal(readFileSync(join(artifactRoot, "look-3.txt"), "utf8"),
-		"alpha\n────────────────\nbranch note\n\nG.\n\nH prompt\n\nH.\n\n────────────────\n\n────────────────\n/path\nstatus\n");
+	assert.equal(execCalls.filter((call) => call.args[0] === "new-split").length, 1);
 });
 
 void test("look diff keeps raw tty output changes when footer chrome is overwritten", async (t) => {
 	const { tool, artifactRoot } = createExecHarness([
-		{ stdout: "24\n" },
+		splitResponse(),
 		{
 			stdout:
-				"\n────────────────────────────────────────────────────────────────────────────────\n\n────────────────────────────────────────────────────────────────────────────────\n/private/tmp/piux\n0.0%/205k (auto)                       (opencode-go) minimax-m2.7 • thinking off\n",
+				"\n────────────────────────────────────────────────────────────────────────────────\n\n────────────────────────────────────────────────────────────────────────────────\n/project\n0.0%/205k (auto)                       (opencode-go) minimax-m2.7 • thinking off\n",
 		},
-		{ stdout: "24\n" },
 		{
 			stdout:
-				"\n────────────────────────────────────────────────────────────────────────────────\nZ001\nZ002────────────────────────────────────────────────────────────────────────────\nZ003vate/tmp/piux\nZ004/205k (auto)                       (opencode-go) minimax-m2.7 • thinking off\nZ005\nZ006\n",
+				"\n────────────────────────────────────────────────────────────────────────────────\nZ001\nZ002────────────────────────────────────────────────────────────────────────────\nZ003oject\nZ004/205k (auto)                       (opencode-go) minimax-m2.7 • thinking off\nZ005\nZ006\n",
 		},
 	]);
 	t.after(() => rmSync(artifactRoot, { recursive: true, force: true }));
@@ -209,12 +217,12 @@ void test("look diff keeps raw tty output changes when footer chrome is overwrit
 	assert.match(text, /\+ Z001/);
 	assert.match(text, /\+ Z006/);
 	assert.equal(readFileSync(join(artifactRoot, "look-2.txt"), "utf8"),
-		"\n────────────────────────────────────────────────────────────────────────────────\nZ001\nZ002────────────────────────────────────────────────────────────────────────────\nZ003vate/tmp/piux\nZ004/205k (auto)                       (opencode-go) minimax-m2.7 • thinking off\nZ005\nZ006\n");
+		"\n────────────────────────────────────────────────────────────────────────────────\nZ001\nZ002────────────────────────────────────────────────────────────────────────────\nZ003oject\nZ004/205k (auto)                       (opencode-go) minimax-m2.7 • thinking off\nZ005\nZ006\n");
 });
 
 void test("look last returns compact tail from full output and saves full-output artifact", async (t) => {
 	const { tool, artifactRoot } = createExecHarness([
-		{ stdout: "3\n" },
+		splitResponse(),
 		{ stdout: "\nhistory\nfirst\n\nsecond\nthird\n" },
 	]);
 	t.after(() => rmSync(artifactRoot, { recursive: true, force: true }));
@@ -227,8 +235,9 @@ void test("look last returns compact tail from full output and saves full-output
 		"\nhistory\nfirst\n\nsecond\nthird\n");
 });
 
-void test("do maps literal text, key names, and enter to tmux send-keys", async (t) => {
+void test("do maps literal text, key names, and enter to cmux surface input", async (t) => {
 	const { tool, execCalls, artifactRoot } = createExecHarness([
+		splitResponse(),
 		{ stdout: "" },
 		{ stdout: "" },
 		{ stdout: "" },
@@ -244,9 +253,11 @@ void test("do maps literal text, key names, and enter to tmux send-keys", async 
 	const text = result.content[0]?.type === "text" ? result.content[0].text : "";
 
 	assert.deepEqual(execCalls.map((call) => [call.command, call.args]), [
-		["tmux", ["-L", "piux", "send-keys", "-t", "piux:pi.0", "-l", "--", "/reload"]],
-		["tmux", ["-L", "piux", "send-keys", "-t", "piux:pi.0", "Escape", "[", "Z"]],
-		["tmux", ["-L", "piux", "send-keys", "-t", "piux:pi.0", "Enter"]],
+		["cmux", ["new-split", "right", "--surface", "surface:origin"]],
+		["cmux", ["send-surface", "--surface", "surface:attached", "/reload"]],
+		["cmux", ["send-key-surface", "--surface", "surface:attached", "escape"]],
+		["cmux", ["send-surface", "--surface", "surface:attached", "[Z"]],
+		["cmux", ["send-key-surface", "--surface", "surface:attached", "enter"]],
 	]);
 	assert.match(text, /sent text, keys, enter/);
 });
@@ -274,12 +285,12 @@ void test("collapsed render shows only the last 5 lines and expanded shows full 
 	]);
 });
 
-void test("renderCall shows full piux_client args in the title", (t) => {
+void test("renderCall shows full pp args in the title", (t) => {
 	const { tool, artifactRoot } = createExecHarness([]);
 	t.after(() => rmSync(artifactRoot, { recursive: true, force: true }));
 
 	assert.deepEqual(renderCallText(tool, { action: "look", mode: "last", lines: 5 }), [
-		"piux_client action=look mode=last lines=5",
+		"pp action=look mode=last lines=5",
 	]);
 	assert.deepEqual(renderCallText(tool, {
 		action: "do",
@@ -287,6 +298,6 @@ void test("renderCall shows full piux_client args in the title", (t) => {
 		keys: ["Escape", "[", "Z"],
 		enter: true,
 	}), [
-		"piux_client action=do text=\"/reload\" keys=[\"Escape\",\"[\",\"Z\"] enter=true",
+		"pp action=do text=\"/reload\" keys=[\"Escape\",\"[\",\"Z\"] enter=true",
 	]);
 });

@@ -20,8 +20,8 @@ Current modules:
 - `src/app/pi-leader-event.ts` - local shared-event type guard for `pi-leader`
 - `src/app/widget.ts` - persistent widget above the editor
 - `src/models/playground-session-state.ts` - session-owned playground state model
-- `src/models/piux-look-store.ts` - `piux` look artifact numbering and storage
-- `src/modules/piux-tool.ts` - playground-only `piux_client` tool for tmux look/do actions
+- `src/models/pp-look-store.ts` - `pp` look artifact numbering and storage
+- `src/modules/pp-tool.ts` - playground-only `pp` tool for cmux look/do actions
 - `src/modules/prompt-navigator.ts` - user-only overlay for inspecting effective prompt and active tools
 - `src/modules/prompt-trace.ts` - session-adjacent prompt trace artifacts for effective prompt, wire prompt, source manifest, and provider response metadata
 - `src/modules/request-debugger.ts` - reusable provider request debug helper
@@ -70,13 +70,13 @@ If Pi is running without a persisted session file, it falls back to `.pi/playgro
 
 If Pi is running without a persisted session file, it falls back to `.pi/playground/` under the current project.
 
-`PiuxTool` writes one full tmux output snapshot per `look` call to `/tmp/piux/.playground/look-*.txt`.
+`PpTool` writes one full cmux output snapshot per `look` call to `.pi/playground/pp/look-*.txt`.
 `look screen`, `look diff`, `look full_output`, and `look last` all share that same saved full-output snapshot.
 
 Docs naming split:
 
-- `piux` - user-only shell alias/function that starts or attaches the clean test base
-- `piux_client` - actual playground custom tool name when this extension is loaded and playground is active
+- `Playground Mode` - active debugging mode in this extension
+- `pp` - actual playground custom tool name when this extension is loaded and Playground Mode is active
 
 ## Current utilities
 
@@ -86,14 +86,15 @@ Docs naming split:
 - slash fallbacks mirror leader actions when `pi-leader` is absent: `/playground-activate`, `/system-view`, `/system-prompt`, `/playground-toggle-request-logging`
 - prompt navigator tabs: `System Prompt` shows the actual last sent prompt from provider payload capture when available, then the full live runtime prompt, then the source breakdown items; `Tools` shows active tool metadata
 - prompt navigator keys: `c` copies current text, `e` opens current text in the editor via `/tmp/pi-system/*.md`, `s` opens the source file in the editor when present, `o` reveals the source in Finder
-- once active, `piux_client` tool becomes available to the agent
-- `piux_client` `look` supports `diff` (default), `screen`, `full_output`, and `last`
-- every `look` captures full tmux output once, saves that full snapshot, then returns a projection:
-- `screen` returns visible pane-height lines from the latest full snapshot
-- `full_output` returns complete tmux scrollback/output
+- once active, `pp` tool becomes available to the agent
+- `pp` creates one cmux split from the origin Pi surface on first use, then reuses the attached surface
+- `pp` `look` supports `diff` (default), `screen`, `full_output`, and `last`
+- every `look` captures full cmux output once, saves that full snapshot, then returns a projection:
+- `screen` returns the visible viewport of the attached surface
+- `full_output` returns complete cmux scrollback/output
 - `diff` compares full snapshots after stripping the bottom input area
 - `last` returns the last non-empty lines from the latest full snapshot
-- `piux_client` `do` sends literal text, named tmux keys, and optional Enter to fixed target `piux:pi.0`
+- `pp` `do` sends literal text, named cmux keys, and optional Enter to the attached playground pane
 - `Playground` widget stays above the input box on the left while playground is active
 - request logging captures full pre-send provider payloads for Pi inspection
 - prompt tracing persists agent-readable prompt artifacts so the agent can inspect effective prompt, sent prompt, source inputs, and response metadata by reading files instead of relying on UI
