@@ -339,6 +339,11 @@ function parseSplitSurface(output: string): string {
 	return surface;
 }
 
+function isClosedTargetSurfaceError(error: unknown): boolean {
+	const message = error instanceof Error ? error.message : String(error);
+	return /\bSurface is not a terminal\b/u.test(message);
+}
+
 export class PpTool {
 	readonly artifactRoot: string;
 	readonly definition;
@@ -450,97 +455,99 @@ export class PpTool {
 		params: PpToolParams,
 		signal: AbortSignal | undefined,
 	) {
-		const mode = params.mode ?? "diff";
-		const surface = await this.resolveTargetSurface(signal);
-		const snapshot = await this.captureSnapshot(surface, signal);
-		const previous = this.#store.getPreviousSnapshot();
-		const path = await this.#store.saveSnapshot(snapshot);
+		return await this.withTargetSurface(signal, async (surface) => {
+			const mode = params.mode ?? "diff";
+			const snapshot = await this.captureSnapshot(surface, signal);
+			const previous = this.#store.getPreviousSnapshot();
+			const path = await this.#store.saveSnapshot(snapshot);
 
-		if (mode === "full_output") {
-			return toTextResult(`Saved ${path}\n\n${trimTrailingBlankLines(snapshot.fullOutput)}`);
-		}
+			if (mode === "full_output") {
+				return toTextResult(`Saved ${path}\n\n${trimTrailingBlankLines(snapshot.fullOutput)}`);
+			}
 
-		if (mode === "screen") {
-			const screen = await this.captureVisible(surface, signal);
-			return toTextResult(`Saved ${path}\n\n${trimTrailingBlankLines(screen)}`);
-		}
+			if (mode === "screen") {
+				const screen = await this.captureVisible(surface, signal);
+				return toTextResult(`Saved ${path}\n\n${trimTrailingBlankLines(screen)}`);
+			}
 
-		if (mode === "last") {
-			const lines = params.lines ?? DEFAULT_LAST_LINES;
-			return toTextResult(getLastNonEmptyLines(snapshot.fullOutput, lines));
-		}
+			if (mode === "last") {
+				const lines = params.lines ?? DEFAULT_LAST_LINES;
+				return toTextResult(getLastNonEmptyLines(snapshot.fullOutput, lines));
+			}
 
-		if (mode !== "diff") {
-			return toTextResult(
-				"Error: look mode must be `diff`, `screen`, `full_output`, or `last`",
-				true,
+			if (mode !== "diff") {
+				return toTextResult(
+					"Error: look mode must be `diff`, `screen`, `full_output`, or `last`",
+					true,
+				);
+			}
+
+			if (!previous) {
+				return toTextResult(`Saved ${path}\n\n${trimTrailingBlankLines(snapshot.fullOutput)}`);
+			}
+
+			const diff = formatScreenDiff(
+				stripInputArea(previous.fullOutput, previous.paneHeight),
+				stripInputArea(snapshot.fullOutput, snapshot.paneHeight),
 			);
-		}
+			if (!diff) {
+				return toTextResult(`Saved ${path}\n\nNo output changes.`);
+			}
 
-		if (!previous) {
-			return toTextResult(`Saved ${path}\n\n${trimTrailingBlankLines(snapshot.fullOutput)}`);
-		}
-
-		const diff = formatScreenDiff(
-			stripInputArea(previous.fullOutput, previous.paneHeight),
-			stripInputArea(snapshot.fullOutput, snapshot.paneHeight),
-		);
-		if (!diff) {
-			return toTextResult(`Saved ${path}\n\nNo output changes.`);
-		}
-
-		return toTextResult(`Saved ${path}\n\n${diff}`);
+			return toTextResult(`Saved ${path}\n\n${diff}`);
+		});
 	}
 
 	private async do(
 		params: PpToolParams,
 		signal: AbortSignal | undefined,
 	) {
-		const surface = await this.resolveTargetSurface(signal);
-		const text = typeof params.text === "string" && params.text.length > 0
-			? params.text
-			: undefined;
-		const keys = params.keys?.filter((key) => typeof key === "string" && key.length > 0) ?? [];
-		const enter = params.enter === true;
-		if (!text && keys.length === 0 && !enter) {
-			return toTextResult("Error: do needs text, keys, or enter", true);
-		}
+		return await this.withTargetSurface(signal, async (surface) => {
+			const text = typeof params.text === "string" && params.text.length > 0
+				? params.text
+				: undefined;
+			const keys = params.keys?.filter((key) => typeof key === "string" && key.length > 0) ?? [];
+			const enter = params.enter === true;
+			if (!text && keys.length === 0 && !enter) {
+				return toTextResult("Error: do needs text, keys, or enter", true);
+			}
 
-		if (text) {
-			await this.runCmux(["send-surface", "--surface", surface, text], signal);
-		}
+			if (text) {
+				await this.runCmux(["send", "--surface", surface, text], signal);
+			}
 
-		if (keys.length > 0) {
-			let literal = "";
+			if (keys.length > 0) {
+				let literal = "";
 
-			const flushLiteral = async () => {
-				if (!literal) {
-					return;
-				}
+				const flushLiteral = async () => {
+					if (!literal) {
+						return;
+					}
 
-				await this.runCmux(["send-surface", "--surface", surface, literal], signal);
-				literal = "";
-			};
+					await this.runCmux(["send", "--surface", surface, literal], signal);
+					literal = "";
+				};
 
-			for (const key of keys) {
-				const cmuxKey = normalizeCmuxKey(key);
-				if (!cmuxKey) {
-					literal += key;
-					continue;
+				for (const key of keys) {
+					const cmuxKey = normalizeCmuxKey(key);
+					if (!cmuxKey) {
+						literal += key;
+						continue;
+					}
+
+					await flushLiteral();
+					await this.runCmux(["send-key", "--surface", surface, cmuxKey], signal);
 				}
 
 				await flushLiteral();
-				await this.runCmux(["send-key-surface", "--surface", surface, cmuxKey], signal);
 			}
 
-			await flushLiteral();
-		}
+			if (enter) {
+				await this.runCmux(["send-key", "--surface", surface, "enter"], signal);
+			}
 
-		if (enter) {
-			await this.runCmux(["send-key-surface", "--surface", surface, "enter"], signal);
-		}
-
-		return toTextResult(getDoSummary({ text, keys, enter }));
+			return toTextResult(getDoSummary({ text, keys, enter }));
+		});
 	}
 
 	private async captureSnapshot(
@@ -591,6 +598,25 @@ export class PpTool {
 		const surface = parseSplitSurface(result.stdout);
 		this.#targetSurface = surface;
 		return surface;
+	}
+
+	private async withTargetSurface<T>(
+		signal: AbortSignal | undefined,
+		operation: (surface: string) => Promise<T>,
+	): Promise<T> {
+		const hadTarget = Boolean(this.#targetSurface);
+		const surface = await this.resolveTargetSurface(signal);
+		try {
+			return await operation(surface);
+		} catch (error) {
+			if (!hadTarget || !this.#targetSurface || !isClosedTargetSurfaceError(error)) {
+				throw error;
+			}
+
+			this.#targetSurface = undefined;
+			const replacement = await this.resolveTargetSurface(signal);
+			return await operation(replacement);
+		}
 	}
 
 	private async runCmux(args: string[], signal: AbortSignal | undefined): Promise<ExecResult> {

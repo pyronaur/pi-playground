@@ -99,9 +99,30 @@ function splitResponse(): { stdout: string } {
 function assertFirstSplit(execCalls: ExecCall[]): void {
 	assert.deepEqual(execCalls[0], {
 		command: "cmux",
-		args: ["new-split", "right", "--surface", "surface:origin"],
+		args: splitArgs("origin"),
 		options: { timeout: 5000 },
 	});
+}
+
+function splitArgs(surface: string): string[] {
+	return ["new-split", "right", "--surface", `surface:${surface}`];
+}
+
+function readArgs(surface: string, scrollback = false): string[] {
+	const args = ["read-screen", "--surface", `surface:${surface}`];
+	if (scrollback) {
+		args.push("--scrollback");
+	}
+
+	return args;
+}
+
+function sendArgs(command: "send" | "send-key", surface: string, value: string): string[] {
+	return [command, "--surface", `surface:${surface}`, value];
+}
+
+function assertCmuxArgs(execCalls: ExecCall[], expected: string[][]): void {
+	assert.deepEqual(execCalls.map((call) => call.args), expected);
 }
 
 void test("syncActive adds and removes pp without dropping other tools", (t) => {
@@ -126,10 +147,10 @@ void test("look screen creates one split, captures visible output, and saves ful
 	const result = await runTool(tool, { action: "look", mode: "screen" });
 	const text = result.content[0]?.type === "text" ? result.content[0].text : "";
 
-	assert.deepEqual(execCalls.map((call) => [call.command, call.args]), [
-		["cmux", ["new-split", "right", "--surface", "surface:origin"]],
-		["cmux", ["read-screen", "--surface", "surface:attached", "--scrollback"]],
-		["cmux", ["read-screen", "--surface", "surface:attached"]],
+	assertCmuxArgs(execCalls, [
+		splitArgs("origin"),
+		readArgs("attached", true),
+		readArgs("attached"),
 	]);
 	assert.match(text, /visible-1\nvisible-2\nvisible-3/);
 	assert.match(text, /look-1\.txt/);
@@ -148,15 +169,35 @@ void test("look full_output returns complete cmux scrollback and saves one snaps
 	const text = result.content[0]?.type === "text" ? result.content[0].text : "";
 
 	assertFirstSplit(execCalls);
-	assert.deepEqual(execCalls[1]?.args, [
-		"read-screen",
-		"--surface",
-		"surface:attached",
-		"--scrollback",
-	]);
+	assert.deepEqual(execCalls[1]?.args, readArgs("attached", true));
 	assert.match(text, /history-1\nhistory-2\nscreen-1\nscreen-2/);
 	assert.equal(readFileSync(join(artifactRoot, "look-1.txt"), "utf8"),
 		"history-1\nhistory-2\nscreen-1\nscreen-2\n");
+});
+
+void test("look recreates the playground pane when the cached surface was closed", async (t) => {
+	const { tool, execCalls, artifactRoot } = createExecHarness([
+		splitResponse(),
+		{ stdout: "before close\n" },
+		{ stdout: "", stderr: "invalid_params: Surface is not a terminal\n", code: 1 },
+		{ stdout: "OK surface:replacement workspace:74\n" },
+		{ stdout: "after recreate\n" },
+	]);
+	t.after(() => rmSync(artifactRoot, { recursive: true, force: true }));
+
+	await runTool(tool, { action: "look", mode: "full_output" });
+	const result = await runTool(tool, { action: "look", mode: "full_output" });
+	const text = result.content[0]?.type === "text" ? result.content[0].text : "";
+
+	assertCmuxArgs(execCalls, [
+		splitArgs("origin"),
+		readArgs("attached", true),
+		readArgs("attached", true),
+		splitArgs("origin"),
+		readArgs("replacement", true),
+	]);
+	assert.match(text, /after recreate/);
+	assert.equal(readFileSync(join(artifactRoot, "look-2.txt"), "utf8"), "after recreate\n");
 });
 
 void test("look diff compares full output, ignores footer chrome, and reuses the split", async (t) => {
@@ -252,12 +293,12 @@ void test("do maps literal text, key names, and enter to cmux surface input", as
 	});
 	const text = result.content[0]?.type === "text" ? result.content[0].text : "";
 
-	assert.deepEqual(execCalls.map((call) => [call.command, call.args]), [
-		["cmux", ["new-split", "right", "--surface", "surface:origin"]],
-		["cmux", ["send-surface", "--surface", "surface:attached", "/reload"]],
-		["cmux", ["send-key-surface", "--surface", "surface:attached", "escape"]],
-		["cmux", ["send-surface", "--surface", "surface:attached", "[Z"]],
-		["cmux", ["send-key-surface", "--surface", "surface:attached", "enter"]],
+	assertCmuxArgs(execCalls, [
+		splitArgs("origin"),
+		sendArgs("send", "attached", "/reload"),
+		sendArgs("send-key", "attached", "escape"),
+		sendArgs("send", "attached", "[Z"),
+		sendArgs("send-key", "attached", "enter"),
 	]);
 	assert.match(text, /sent text, keys, enter/);
 });
