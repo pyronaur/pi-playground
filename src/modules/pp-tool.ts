@@ -33,6 +33,11 @@ type PpToolParams = {
 	enter?: boolean;
 };
 
+type TargetSurface = {
+	workspace?: string;
+	surface: string;
+};
+
 function toTextResult(text: string, isError = false) {
 	return {
 		content: [{ type: "text" as const, text }],
@@ -330,13 +335,44 @@ function normalizeCmuxKey(key: string): string | undefined {
 	}
 }
 
-function parseSplitSurface(output: string): string {
+function toRecord(value: unknown): Record<string, unknown> | undefined {
+	if (typeof value !== "object" || value === null || Array.isArray(value)) {
+		return undefined;
+	}
+
+	return value as Record<string, unknown>;
+}
+
+function getString(source: Record<string, unknown>, key: string): string | undefined {
+	const value = source[key];
+	return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function getStringArray(source: Record<string, unknown>, key: string): string[] {
+	const value = source[key];
+	if (!Array.isArray(value)) {
+		return [];
+	}
+
+	return value.filter((item): item is string => typeof item === "string" && item.length > 0);
+}
+
+function parseJsonObject(text: string): Record<string, unknown> | undefined {
+	try {
+		return toRecord(JSON.parse(text));
+	} catch {
+		return undefined;
+	}
+}
+
+function parseSplitTarget(output: string): TargetSurface {
 	const surface = /\bsurface:[^\s]+/u.exec(output)?.[0];
 	if (!surface) {
 		throw new Error("cmux new-split did not return a surface id");
 	}
 
-	return surface;
+	const workspace = /\bworkspace:[^\s]+/u.exec(output)?.[0];
+	return workspace ? { surface, workspace } : { surface };
 }
 
 function isClosedTargetSurfaceError(error: unknown): boolean {
@@ -349,7 +385,7 @@ export class PpTool {
 	readonly definition;
 	readonly #host: PpToolHost;
 	readonly #originSurface: string | undefined;
-	#targetSurface: string | undefined;
+	#targetSurface: TargetSurface | undefined;
 	readonly #timeout: number;
 	readonly #store: PpLookStore;
 
@@ -455,9 +491,9 @@ export class PpTool {
 		params: PpToolParams,
 		signal: AbortSignal | undefined,
 	) {
-		return await this.withTargetSurface(signal, async (surface) => {
+		return await this.withTargetSurface(signal, async (target) => {
 			const mode = params.mode ?? "diff";
-			const snapshot = await this.captureSnapshot(surface, signal);
+			const snapshot = await this.captureSnapshot(target, signal);
 			const previous = this.#store.getPreviousSnapshot();
 			const path = await this.#store.saveSnapshot(snapshot);
 
@@ -466,7 +502,7 @@ export class PpTool {
 			}
 
 			if (mode === "screen") {
-				const screen = await this.captureVisible(surface, signal);
+				const screen = await this.captureVisible(target, signal);
 				return toTextResult(`Saved ${path}\n\n${trimTrailingBlankLines(screen)}`);
 			}
 
@@ -502,7 +538,7 @@ export class PpTool {
 		params: PpToolParams,
 		signal: AbortSignal | undefined,
 	) {
-		return await this.withTargetSurface(signal, async (surface) => {
+		return await this.withTargetSurface(signal, async (target) => {
 			const text = typeof params.text === "string" && params.text.length > 0
 				? params.text
 				: undefined;
@@ -513,7 +549,7 @@ export class PpTool {
 			}
 
 			if (text) {
-				await this.runCmux(["send", "--surface", surface, text], signal);
+				await this.runCmux([...this.targetArgs("send", target), text], signal);
 			}
 
 			if (keys.length > 0) {
@@ -524,7 +560,7 @@ export class PpTool {
 						return;
 					}
 
-					await this.runCmux(["send", "--surface", surface, literal], signal);
+					await this.runCmux([...this.targetArgs("send", target), literal], signal);
 					literal = "";
 				};
 
@@ -536,14 +572,14 @@ export class PpTool {
 					}
 
 					await flushLiteral();
-					await this.runCmux(["send-key", "--surface", surface, cmuxKey], signal);
+					await this.runCmux([...this.targetArgs("send-key", target), cmuxKey], signal);
 				}
 
 				await flushLiteral();
 			}
 
 			if (enter) {
-				await this.runCmux(["send-key", "--surface", surface, "enter"], signal);
+				await this.runCmux([...this.targetArgs("send-key", target), "enter"], signal);
 			}
 
 			return toTextResult(getDoSummary({ text, keys, enter }));
@@ -551,7 +587,7 @@ export class PpTool {
 	}
 
 	private async captureSnapshot(
-		surface: string,
+		target: TargetSurface,
 		signal: AbortSignal | undefined,
 	): Promise<{
 		fullOutput: string;
@@ -559,8 +595,7 @@ export class PpTool {
 	}> {
 		const result = await this.runCmux([
 			"read-screen",
-			"--surface",
-			surface,
+			...this.targetFlags(target),
 			"--scrollback",
 		], signal);
 		return {
@@ -570,18 +605,17 @@ export class PpTool {
 	}
 
 	private async captureVisible(
-		surface: string,
+		target: TargetSurface,
 		signal: AbortSignal | undefined,
 	): Promise<string> {
 		const result = await this.runCmux([
 			"read-screen",
-			"--surface",
-			surface,
+			...this.targetFlags(target),
 		], signal);
 		return result.stdout;
 	}
 
-	private async resolveTargetSurface(signal: AbortSignal | undefined): Promise<string> {
+	private async resolveTargetSurface(signal: AbortSignal | undefined): Promise<TargetSurface> {
 		if (this.#targetSurface) {
 			return this.#targetSurface;
 		}
@@ -595,28 +629,143 @@ export class PpTool {
 			"--surface",
 			this.#originSurface,
 		], signal);
-		const surface = parseSplitSurface(result.stdout);
-		this.#targetSurface = surface;
-		return surface;
+		const target = parseSplitTarget(result.stdout);
+		this.#targetSurface = target;
+		return target;
 	}
 
 	private async withTargetSurface<T>(
 		signal: AbortSignal | undefined,
-		operation: (surface: string) => Promise<T>,
+		operation: (target: TargetSurface) => Promise<T>,
 	): Promise<T> {
 		const hadTarget = Boolean(this.#targetSurface);
-		const surface = await this.resolveTargetSurface(signal);
+		const target = await this.resolveTargetSurface(signal);
 		try {
-			return await operation(surface);
+			return await operation(target);
 		} catch (error) {
 			if (!hadTarget || !this.#targetSurface || !isClosedTargetSurfaceError(error)) {
 				throw error;
+			}
+
+			const movedTarget = await this.findTargetSurfaceInWorkspaces(this.#targetSurface, signal);
+			if (movedTarget) {
+				this.#targetSurface = movedTarget;
+				return await operation(movedTarget);
 			}
 
 			this.#targetSurface = undefined;
 			const replacement = await this.resolveTargetSurface(signal);
 			return await operation(replacement);
 		}
+	}
+
+	private targetFlags(target: TargetSurface): string[] {
+		const args: string[] = [];
+		if (target.workspace) {
+			args.push("--workspace", target.workspace);
+		}
+		args.push("--surface", target.surface);
+		return args;
+	}
+
+	private targetArgs(command: "send" | "send-key", target: TargetSurface): string[] {
+		return [command, ...this.targetFlags(target)];
+	}
+
+	private async findTargetSurfaceInWorkspaces(
+		target: TargetSurface,
+		signal: AbortSignal | undefined,
+	): Promise<TargetSurface | undefined> {
+		let workspacesResult: ExecResult;
+		try {
+			workspacesResult = await this.runCmux([
+				"--json",
+				"--id-format",
+				"both",
+				"list-workspaces",
+			], signal);
+		} catch {
+			return undefined;
+		}
+
+		const body = parseJsonObject(workspacesResult.stdout);
+		const workspacesValue = body?.workspaces;
+		const workspaces = Array.isArray(workspacesValue) ? workspacesValue : [];
+
+		for (const item of workspaces) {
+			const workspace = toRecord(item);
+			if (!workspace) {
+				continue;
+			}
+
+			const workspaceArg = getString(workspace, "ref")
+				?? getString(workspace, "workspace_ref")
+				?? getString(workspace, "id")
+				?? getString(workspace, "workspace_id");
+			if (!workspaceArg) {
+				continue;
+			}
+
+			const found = await this.findTargetSurfaceInWorkspace(target, workspaceArg, signal);
+			if (found) {
+				return found;
+			}
+		}
+
+		return undefined;
+	}
+
+	private async findTargetSurfaceInWorkspace(
+		target: TargetSurface,
+		workspaceArg: string,
+		signal: AbortSignal | undefined,
+	): Promise<TargetSurface | undefined> {
+		let panesResult: ExecResult;
+		try {
+			panesResult = await this.runCmux([
+				"--json",
+				"--id-format",
+				"both",
+				"list-panes",
+				"--workspace",
+				workspaceArg,
+			], signal);
+		} catch {
+			return undefined;
+		}
+
+		const body = parseJsonObject(panesResult.stdout);
+		if (!body) {
+			return undefined;
+		}
+
+		const workspace = getString(body, "workspace_id")
+			?? getString(body, "workspace_ref")
+			?? workspaceArg;
+		const panes = Array.isArray(body.panes) ? body.panes : [];
+
+		for (const item of panes) {
+			const pane = toRecord(item);
+			if (!pane) {
+				continue;
+			}
+
+			const refs = getStringArray(pane, "surface_refs");
+			const ids = getStringArray(pane, "surface_ids");
+			const refIndex = refs.indexOf(target.surface);
+			const idIndex = ids.indexOf(target.surface);
+			const matchIndex = refIndex >= 0 ? refIndex : idIndex;
+			if (matchIndex < 0) {
+				continue;
+			}
+
+			return {
+				workspace,
+				surface: ids[matchIndex] ?? refs[matchIndex] ?? target.surface,
+			};
+		}
+
+		return undefined;
 	}
 
 	private async runCmux(args: string[], signal: AbortSignal | undefined): Promise<ExecResult> {

@@ -96,6 +96,31 @@ function splitResponse(): { stdout: string } {
 	return { stdout: "OK surface:attached workspace:74\n" };
 }
 
+function listWorkspacesResponse(
+	workspaces: Array<{ ref: string; id?: string }>,
+): { stdout: string } {
+	return { stdout: `${JSON.stringify({ workspaces })}\n` };
+}
+
+function listPanesResponse(input: {
+	workspaceRef: string;
+	workspaceId?: string;
+	surfaces?: Array<{ ref: string; id?: string }>;
+}): { stdout: string } {
+	return {
+		stdout: `${
+			JSON.stringify({
+				workspace_ref: input.workspaceRef,
+				workspace_id: input.workspaceId,
+				panes: [{
+					surface_refs: input.surfaces?.map((surface) => surface.ref) ?? [],
+					surface_ids: input.surfaces?.map((surface) => surface.id ?? surface.ref) ?? [],
+				}],
+			})
+		}\n`,
+	};
+}
+
 function assertFirstSplit(execCalls: ExecCall[]): void {
 	assert.deepEqual(execCalls[0], {
 		command: "cmux",
@@ -108,8 +133,20 @@ function splitArgs(surface: string): string[] {
 	return ["new-split", "right", "--surface", `surface:${surface}`];
 }
 
-function readArgs(surface: string, scrollback = false): string[] {
-	const args = ["read-screen", "--surface", `surface:${surface}`];
+function targetFlags(surface: string, workspace?: string): string[] {
+	const args: string[] = [];
+	if (workspace) {
+		args.push("--workspace", workspace);
+	}
+	const surfaceArg = surface.includes(":") || /^[0-9A-F-]{36}$/iu.test(surface)
+		? surface
+		: `surface:${surface}`;
+	args.push("--surface", surfaceArg);
+	return args;
+}
+
+function readArgs(surface: string, scrollback = false, workspace = "workspace:74"): string[] {
+	const args = ["read-screen", ...targetFlags(surface, workspace)];
 	if (scrollback) {
 		args.push("--scrollback");
 	}
@@ -117,8 +154,21 @@ function readArgs(surface: string, scrollback = false): string[] {
 	return args;
 }
 
-function sendArgs(command: "send" | "send-key", surface: string, value: string): string[] {
-	return [command, "--surface", `surface:${surface}`, value];
+function sendArgs(
+	command: "send" | "send-key",
+	surface: string,
+	value: string,
+	workspace = "workspace:74",
+): string[] {
+	return [command, ...targetFlags(surface, workspace), value];
+}
+
+function listWorkspacesArgs(): string[] {
+	return ["--json", "--id-format", "both", "list-workspaces"];
+}
+
+function listPanesArgs(workspace: string): string[] {
+	return ["--json", "--id-format", "both", "list-panes", "--workspace", workspace];
 }
 
 function assertCmuxArgs(execCalls: ExecCall[], expected: string[][]): void {
@@ -180,6 +230,7 @@ void test("look recreates the playground pane when the cached surface was closed
 		splitResponse(),
 		{ stdout: "before close\n" },
 		{ stdout: "", stderr: "invalid_params: Surface is not a terminal\n", code: 1 },
+		listWorkspacesResponse([]),
 		{ stdout: "OK surface:replacement workspace:74\n" },
 		{ stdout: "after recreate\n" },
 	]);
@@ -193,11 +244,48 @@ void test("look recreates the playground pane when the cached surface was closed
 		splitArgs("origin"),
 		readArgs("attached", true),
 		readArgs("attached", true),
+		listWorkspacesArgs(),
 		splitArgs("origin"),
 		readArgs("replacement", true),
 	]);
 	assert.match(text, /after recreate/);
 	assert.equal(readFileSync(join(artifactRoot, "look-2.txt"), "utf8"), "after recreate\n");
+});
+
+void test("look recovers a moved playground pane by scanning workspaces", async (t) => {
+	const movedWorkspaceId = "E4AD46BF-F625-486E-99F0-9A73E9E24D81";
+	const movedSurfaceId = "A9F3E47D-14CB-4FB7-B4F0-E31CFADE5BE0";
+	const { tool, execCalls, artifactRoot } = createExecHarness([
+		splitResponse(),
+		{ stdout: "before move\n" },
+		{ stdout: "", stderr: "invalid_params: Surface is not a terminal\n", code: 1 },
+		listWorkspacesResponse([{ ref: "workspace:74" }, { ref: "workspace:83" }]),
+		listPanesResponse({ workspaceRef: "workspace:74", surfaces: [] }),
+		listPanesResponse({
+			workspaceRef: "workspace:83",
+			workspaceId: movedWorkspaceId,
+			surfaces: [{ ref: "surface:attached", id: movedSurfaceId }],
+		}),
+		{ stdout: "after move\n" },
+	]);
+	t.after(() => rmSync(artifactRoot, { recursive: true, force: true }));
+
+	await runTool(tool, { action: "look", mode: "full_output" });
+	const result = await runTool(tool, { action: "look", mode: "full_output" });
+	const text = result.content[0]?.type === "text" ? result.content[0].text : "";
+
+	assertCmuxArgs(execCalls, [
+		splitArgs("origin"),
+		readArgs("attached", true),
+		readArgs("attached", true),
+		listWorkspacesArgs(),
+		listPanesArgs("workspace:74"),
+		listPanesArgs("workspace:83"),
+		readArgs(movedSurfaceId, true, movedWorkspaceId),
+	]);
+	assert.equal(execCalls.filter((call) => call.args[0] === "new-split").length, 1);
+	assert.match(text, /after move/);
+	assert.equal(readFileSync(join(artifactRoot, "look-2.txt"), "utf8"), "after move\n");
 });
 
 void test("look diff compares full output, ignores footer chrome, and reuses the split", async (t) => {
