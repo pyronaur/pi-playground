@@ -5,6 +5,12 @@
 - quick place to try small Pi experiments
 - collection of Pi inspection/debug utilities
 
+## Workflow intent
+
+Playground is primarily a temporary experiment area for Pi-specific runtime work. Use it to try uncertain extension ideas, inspect Pi behavior, and stabilize useful pieces before either keeping them as documented playground utilities or extracting them into another extension/package.
+
+This is guidance, not a hard routing rule. A request to "experiment" does not automatically belong in playground; ask when the target location is ambiguous.
+
 ## Current shape
 
 Current runtime shape is package-style TypeScript:

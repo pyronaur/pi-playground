@@ -1,6 +1,6 @@
 # pi-playground
 
-- Purpose: `pi-playground` is both quick experiment playground and utility package for inspecting/debugging Pi itself.
+- Purpose: `pi-playground` is both quick experiment playground and utility package for inspecting/debugging Pi itself. Canonical workflow intent lives in `README.md`.
 - Scope: keep tools focused on Pi runtime inspection, request debugging, session inspection, and other dev-only utilities.
 - Packaging: treat public exports as explicit API. If another extension should import helper, export it intentionally from `package.json` and document it in `README.md`.
 - Packaging: keep `package.json` `exports`, `README.md` `Public surface`, and real reusable modules aligned. `knip` already reads package exports; use `knip.json` only for extra non-export entrypoints.
