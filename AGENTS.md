@@ -14,5 +14,3 @@
 - Playground control: slash fallback names should mirror leader behavior. Current exception: prompt navigator uses `/system-view`.
 - Playground control: current fallback commands are `/playground`, `/system-view`, and `/playground-toggle-request-logging`.
 - Storage: keep debug traces out of LLM context. Prefer session-adjacent sidecar files for large wire payloads.
-- Completion workflow lives in `.gatefile.json5`.
-- Gate protection: markdown changes require explicit `--allow-protected-markdown` unless the only markdown change is `README.md`.
