@@ -32,7 +32,7 @@ Current modules:
 - `src/modules/prompt-trace.ts` - session-adjacent prompt trace artifacts for effective prompt, wire prompt, source manifest, and provider response metadata
 - `src/modules/request-debugger.ts` - reusable provider request debug helper
 
-This repo is now a package-style TypeScript base so other local Pi extensions can import selected helpers through normal npm `devDependencies` wiring.
+This repo is now a package-style TypeScript base so other local Pi extensions can import selected helpers through normal `devDependencies` wiring.
 
 ## Public surface policy
 

@@ -2,6 +2,7 @@
   "name": "pi-playground",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@11.1.1",
   "description": "Pi experiment playground and debugging utility package.",
   "keywords": ["pi-package"],
   "exports": {
@@ -21,7 +22,8 @@
     "unused": "knip"
   },
   "peerDependencies": {
-    "@mariozechner/pi-coding-agent": "*"
+    "@mariozechner/pi-coding-agent": "*",
+    "@mariozechner/pi-tui": "*"
   },
   "devDependencies": {
     "@mariozechner/pi-coding-agent": "latest",
