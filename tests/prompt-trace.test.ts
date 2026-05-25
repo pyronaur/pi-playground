@@ -21,10 +21,9 @@ function withAgentDir<T>(agentDir: string, run: () => T): T {
 	} finally {
 		if (previous === undefined) {
 			delete process.env.PI_CODING_AGENT_DIR;
-			return;
+		} else {
+			process.env.PI_CODING_AGENT_DIR = previous;
 		}
-
-		process.env.PI_CODING_AGENT_DIR = previous;
 	}
 }
 
@@ -63,7 +62,7 @@ void test("capturePromptTrace writes effective prompt, actual prompt, and source
 				},
 			} as never,
 			{
-				activeToolNames: ["read", "pp"],
+				activeToolNames: ["read", "cmux"],
 				allTools: [
 					{
 						name: "read",
@@ -72,10 +71,10 @@ void test("capturePromptTrace writes effective prompt, actual prompt, and source
 						sourceInfo: { path: "/tools/read.ts" },
 					},
 					{
-						name: "pp",
-						description: "Drive the playground pane",
+						name: "cmux",
+						description: "Drive the attached cmux pane",
 						parameters: { type: "object" },
-						sourceInfo: { path: "/tools/pp.ts" },
+						sourceInfo: { path: "/tools/cmux.ts" },
 					},
 				],
 			},
@@ -101,7 +100,7 @@ void test("capturePromptTrace writes effective prompt, actual prompt, and source
 		assert.equal(sources?.actualPromptSource, "payload.instructions");
 		assert.equal(sources?.effectivePromptPath, paths.effectivePrompt);
 		assert.equal(sources?.providerResponsePath, paths.providerResponse);
-		assert.deepEqual(sources?.activeTools.map((item) => item.name), ["read", "pp"]);
+		assert.deepEqual(sources?.activeTools.map((item) => item.name), ["read", "cmux"]);
 		assert.equal(sources?.activeToolCount, 2);
 		assert.equal(sources?.totalToolCount, 2);
 	});

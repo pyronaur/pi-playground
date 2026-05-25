@@ -4,13 +4,17 @@
   "type": "module",
   "packageManager": "pnpm@11.1.1",
   "description": "Pi experiment playground and debugging utility package.",
-  "keywords": ["pi-package"],
+  "keywords": [
+    "pi-package"
+  ],
   "exports": {
     "./extension": "./src/index.ts",
     "./request-debugger": "./src/modules/request-debugger.ts"
   },
   "pi": {
-    "extensions": ["./src/index.ts"]
+    "extensions": [
+      "./src/index.ts"
+    ]
   },
   "scripts": {
     "test": "node --experimental-strip-types --test tests/*.test.ts",
@@ -28,7 +32,6 @@
   "devDependencies": {
     "@mariozechner/pi-coding-agent": "latest",
     "@mariozechner/pi-tui": "latest",
-    "@sinclair/typebox": "^0.34.41",
     "@types/node": "latest",
     "dprint": "latest",
     "jscpd": "latest",
