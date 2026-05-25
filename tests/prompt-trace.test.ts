@@ -12,6 +12,7 @@ import {
 	readPromptSources,
 	readProviderResponse,
 } from "../src/modules/prompt-trace.ts";
+import { promptToolOptions } from "./prompt-tool-fixtures.ts";
 
 function withAgentDir<T>(agentDir: string, run: () => T): T {
 	const previous = process.env.PI_CODING_AGENT_DIR;
@@ -61,23 +62,7 @@ void test("capturePromptTrace writes effective prompt, actual prompt, and source
 					},
 				},
 			} as never,
-			{
-				activeToolNames: ["read", "cmux"],
-				allTools: [
-					{
-						name: "read",
-						description: "Read files",
-						parameters: { type: "object" },
-						sourceInfo: { path: "/tools/read.ts" },
-					},
-					{
-						name: "cmux",
-						description: "Drive the attached cmux pane",
-						parameters: { type: "object" },
-						sourceInfo: { path: "/tools/cmux.ts" },
-					},
-				],
-			},
+			promptToolOptions(),
 		);
 
 		const paths = getPromptTracePaths(sessionFile, cwd);

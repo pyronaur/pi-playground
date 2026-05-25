@@ -331,17 +331,38 @@ function getLatestState(entries: Entry[]) {
 		});
 }
 
+function activeStateEntry(id: string): Entry {
+	return {
+		type: "custom",
+		id,
+		customType: PLAYGROUND_STATE_TYPE,
+		data: { active: true, requestLogging: false },
+	};
+}
+
+function exposureEntry(id: string, exposure: PlaygroundExposureMessage): Entry {
+	const message = exposure.toMessage();
+	return {
+		type: "custom_message",
+		id,
+		customType: message.customType,
+		content: message.content,
+		display: message.display,
+		details: message.details,
+	};
+}
+
+function activeEntries(...exposures: PlaygroundExposureMessage[]): Entry[] {
+	return [
+		{ type: "header", id: "0" },
+		activeStateEntry("1"),
+		...exposures.map((exposure, index) => exposureEntry(String(index + 2), exposure)),
+	];
+}
+
 function createActiveHarness() {
 	return createHarness({
-		entries: [
-			{ type: "header", id: "0" },
-			{
-				type: "custom",
-				id: "1",
-				customType: PLAYGROUND_STATE_TYPE,
-				data: { active: true, requestLogging: false },
-			},
-		],
+		entries: activeEntries(),
 	});
 }
 
@@ -350,29 +371,10 @@ function createActiveHarnessWithExposure() {
 	const exposure = PlaygroundExposureMessage.create({
 		compactionId: "root",
 		sessionId: "session-123",
-		sessionFile: sessionFile,
+		sessionFile,
 	});
 
-	return createHarness({
-		sessionFile,
-		entries: [
-			{ type: "header", id: "0" },
-			{
-				type: "custom",
-				id: "1",
-				customType: PLAYGROUND_STATE_TYPE,
-				data: { active: true, requestLogging: false },
-			},
-			{
-				type: "custom_message",
-				id: "2",
-				customType: exposure.toMessage().customType,
-				content: exposure.toMessage().content,
-				display: exposure.toMessage().display,
-				details: exposure.toMessage().details,
-			},
-		],
-	});
+	return createHarness({ sessionFile, entries: activeEntries(exposure) });
 }
 
 function createForkedHarnessWithOldExposure() {
@@ -387,23 +389,7 @@ function createForkedHarnessWithOldExposure() {
 		sessionId: "new-session-id",
 		sessionFile: "/tmp/current/session.jsonl",
 		sessionStart: { reason: "fork", previousSessionFile },
-		entries: [
-			{ type: "header", id: "0" },
-			{
-				type: "custom",
-				id: "1",
-				customType: PLAYGROUND_STATE_TYPE,
-				data: { active: true, requestLogging: false },
-			},
-			{
-				type: "custom_message",
-				id: "2",
-				customType: exposure.toMessage().customType,
-				content: exposure.toMessage().content,
-				display: exposure.toMessage().display,
-				details: exposure.toMessage().details,
-			},
-		],
+		entries: activeEntries(exposure),
 	});
 }
 
@@ -420,28 +406,9 @@ function createTreeNavigationHarness() {
 	});
 	const entries: Entry[] = [
 		{ type: "header", id: "0" },
-		{
-			type: "custom",
-			id: "1",
-			customType: PLAYGROUND_STATE_TYPE,
-			data: { active: true, requestLogging: false },
-		},
-		{
-			type: "custom_message",
-			id: "2",
-			customType: staleExposure.toMessage().customType,
-			content: staleExposure.toMessage().content,
-			display: staleExposure.toMessage().display,
-			details: staleExposure.toMessage().details,
-		},
-		{
-			type: "custom_message",
-			id: "3",
-			customType: currentExposure.toMessage().customType,
-			content: currentExposure.toMessage().content,
-			display: currentExposure.toMessage().display,
-			details: currentExposure.toMessage().details,
-		},
+		activeStateEntry("1"),
+		exposureEntry("2", staleExposure),
+		exposureEntry("3", currentExposure),
 	];
 
 	return createHarness({
@@ -450,6 +417,11 @@ function createTreeNavigationHarness() {
 		sessionFile: "/tmp/current/session.jsonl",
 		currentBranch: entries.slice(1),
 	});
+}
+
+async function startHarnessTrace(harness: ReturnType<typeof createHarness>) {
+	await harness.startSession();
+	return getPromptTracePaths(join(harness.cwd, "session.jsonl"), harness.cwd);
 }
 
 async function openPlaygroundSubmenu(harness: ReturnType<typeof createHarness>) {
@@ -759,8 +731,7 @@ void test("actual prompt capture writes a system prompt sidecar on provider requ
 	const harness = createHarness();
 	t.after(harness.cleanup);
 
-	await harness.startSession();
-	const paths = getPromptTracePaths(join(harness.cwd, "session.jsonl"), harness.cwd);
+	const paths = await startHarnessTrace(harness);
 	await harness.emit("before_provider_request", {
 		type: "before_provider_request",
 		payload: {
@@ -780,8 +751,7 @@ void test("provider response capture writes a response metadata sidecar", async 
 	const harness = createHarness();
 	t.after(harness.cleanup);
 
-	await harness.startSession();
-	const paths = getPromptTracePaths(join(harness.cwd, "session.jsonl"), harness.cwd);
+	const paths = await startHarnessTrace(harness);
 	await harness.emit("after_provider_response", {
 		type: "after_provider_response",
 		status: 200,

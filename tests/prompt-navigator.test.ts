@@ -10,6 +10,7 @@ import {
 	getPromptNavigatorLayout,
 	writePromptNavigatorTextFile,
 } from "../src/modules/prompt-navigator.ts";
+import { promptNavigatorTools, promptToolOptions } from "./prompt-tool-fixtures.ts";
 
 void test("createPromptNavigatorData includes effective prompt, file-backed sources, and active tools", () => {
 	const root = mkdtempSync(join(tmpdir(), "prompt-nav-"));
@@ -77,27 +78,7 @@ void test("createPromptNavigatorData includes effective prompt, file-backed sour
 				source: "payload.instructions",
 				path: join(root, "session.system-prompt.txt"),
 			},
-			activeToolNames: ["read", "cmux"],
-			allTools: [
-				{
-					name: "read",
-					description: "Read files",
-					parameters: { type: "object" },
-					sourceInfo: { path: "/tools/read.ts" },
-				},
-				{
-					name: "cmux",
-					description: "Drive the attached cmux pane",
-					parameters: { type: "object" },
-					sourceInfo: { path: "/tools/cmux.ts" },
-				},
-				{
-					name: "bash",
-					description: "Run bash",
-					parameters: { type: "object" },
-					sourceInfo: { path: "/tools/bash.ts" },
-				},
-			],
+			...promptToolOptions(promptNavigatorTools()),
 		},
 	);
 

@@ -1,6 +1,6 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { basename, join, relative, resolve, sep } from "node:path";
+import { basename, join, relative, sep } from "node:path";
 
 import type { ExtensionAPI, ExtensionContext, ToolInfo } from "@mariozechner/pi-coding-agent";
 import {
@@ -13,7 +13,10 @@ import {
 } from "@mariozechner/pi-tui";
 
 import { type ActualPromptCapture, readActualPrompt } from "./actual-prompt.ts";
+import { getAgentDir } from "./agent-dir.ts";
+import { getEditorCommandFromEnv } from "./editor-command.ts";
 import { getEditorPaddingX } from "./editor-padding.ts";
+import { discoverPromptFile, loadProjectContextFiles, readIfExists } from "./prompt-files.ts";
 
 type NavigatorTab = "system" | "tools";
 
@@ -50,32 +53,8 @@ type PromptNavigatorOptions = {
 	actualPrompt?: ActualPromptCapture;
 };
 
-const CONFIG_DIR = ".pi";
 const MAX_LIST_LINES = 16;
 const MAX_BODY_LINES = 24;
-
-function expandHome(path: string): string {
-	if (path === "~") return homedir();
-	if (path.startsWith("~/")) return join(homedir(), path.slice(2));
-	return path;
-}
-
-function getAgentDir(): string {
-	const envDir = process.env.PI_CODING_AGENT_DIR;
-	if (envDir) {
-		return expandHome(envDir);
-	}
-
-	return join(homedir(), CONFIG_DIR, "agent");
-}
-
-function readIfExists(path: string | undefined): string | undefined {
-	if (!path || !existsSync(path)) {
-		return undefined;
-	}
-
-	return readFileSync(path, "utf8");
-}
 
 function shortPath(path: string, cwd: string): string {
 	const home = homedir();
@@ -151,80 +130,6 @@ function wrapLine(text: string, width: number): string[] {
 
 function wrapText(text: string, width: number): string[] {
 	return text.split("\n").flatMap((line) => wrapLine(line, width));
-}
-
-function discoverSystemPromptPath(cwd: string, agentDir: string): string | undefined {
-	const projectPath = join(cwd, CONFIG_DIR, "SYSTEM.md");
-	if (existsSync(projectPath)) {
-		return projectPath;
-	}
-
-	const globalPath = join(agentDir, "SYSTEM.md");
-	if (existsSync(globalPath)) {
-		return globalPath;
-	}
-
-	return undefined;
-}
-
-function discoverAppendSystemPromptPath(cwd: string, agentDir: string): string | undefined {
-	const projectPath = join(cwd, CONFIG_DIR, "APPEND_SYSTEM.md");
-	if (existsSync(projectPath)) {
-		return projectPath;
-	}
-
-	const globalPath = join(agentDir, "APPEND_SYSTEM.md");
-	if (existsSync(globalPath)) {
-		return globalPath;
-	}
-
-	return undefined;
-}
-
-function discoverContextFile(dir: string): string | undefined {
-	for (const name of ["AGENTS.md", "CLAUDE.md"]) {
-		const path = join(dir, name);
-		if (existsSync(path)) {
-			return path;
-		}
-	}
-
-	return undefined;
-}
-
-function discoverContextPaths(cwd: string, agentDir: string): string[] {
-	const files: string[] = [];
-	const seen = new Set<string>();
-	const globalFile = discoverContextFile(agentDir);
-	if (globalFile) {
-		files.push(globalFile);
-		seen.add(resolve(globalFile));
-	}
-
-	const ancestors: string[] = [];
-	let current = resolve(cwd);
-	const root = resolve(sep);
-	while (true) {
-		const file = discoverContextFile(current);
-		if (file) {
-			const key = resolve(file);
-			if (!seen.has(key)) {
-				ancestors.unshift(file);
-				seen.add(key);
-			}
-		}
-		if (current === root) {
-			break;
-		}
-		const parent = resolve(current, "..");
-		if (parent === current) {
-			break;
-		}
-		current = parent;
-	}
-
-	files.push(...ancestors);
-	return files;
 }
 
 function extractFooter(fullPrompt: string): string | undefined {
@@ -320,9 +225,9 @@ export function createPromptNavigatorData(
 		meta: `${fullPrompt.length} chars • ctx.getSystemPrompt()`,
 	});
 
-	const systemPath = discoverSystemPromptPath(ctx.cwd, agentDir);
+	const systemPath = discoverPromptFile(ctx.cwd, agentDir, "SYSTEM.md")?.path;
 	const systemContent = readIfExists(systemPath);
-	const appendPath = discoverAppendSystemPromptPath(ctx.cwd, agentDir);
+	const appendPath = discoverPromptFile(ctx.cwd, agentDir, "APPEND_SYSTEM.md")?.path;
 	const appendContent = readIfExists(appendPath);
 	const prelude = extractPrelude(fullPrompt);
 
@@ -366,18 +271,13 @@ export function createPromptNavigatorData(
 		});
 	}
 
-	for (const path of discoverContextPaths(ctx.cwd, agentDir)) {
-		const content = readIfExists(path);
-		if (content === undefined) {
-			continue;
-		}
-
+	for (const file of loadProjectContextFiles(ctx.cwd, agentDir)) {
 		systemItems.push({
-			id: `file:${path}`,
-			label: shortPath(path, ctx.cwd),
-			title: basename(path),
-			content,
-			path,
+			id: `file:${file.path}`,
+			label: shortPath(file.path, ctx.cwd),
+			title: basename(file.path),
+			content: file.content,
+			path: file.path,
 			kind: "file",
 		});
 	}
@@ -433,17 +333,7 @@ export function createPromptNavigatorData(
 }
 
 function getEditorCommand(): { command: string; args: string[] } | undefined {
-	const editorCmd = process.env.VISUAL || process.env.EDITOR;
-	if (!editorCmd) {
-		return undefined;
-	}
-
-	const [command, ...args] = editorCmd.split(" ").filter(Boolean);
-	if (!command) {
-		return undefined;
-	}
-
-	return { command, args };
+	return getEditorCommandFromEnv(process.env);
 }
 
 function slugifyTitle(title: string): string {
@@ -471,17 +361,7 @@ export function writePromptNavigatorTextFile(
 export function getExternalEditorCommandForTest(
 	env: NodeJS.ProcessEnv,
 ): { command: string; args: string[] } | undefined {
-	const editorCmd = env.VISUAL || env.EDITOR;
-	if (!editorCmd) {
-		return undefined;
-	}
-
-	const [command, ...args] = editorCmd.split(" ").filter(Boolean);
-	if (!command) {
-		return undefined;
-	}
-
-	return { command, args };
+	return getEditorCommandFromEnv(env);
 }
 
 class PromptNavigatorComponent implements Focusable {

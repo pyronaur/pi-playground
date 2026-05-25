@@ -1,6 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join } from "node:path";
 
 import {
 	type ExtensionContext,
@@ -12,15 +11,14 @@ import {
 	captureActualPrompt,
 	getActualPromptPath,
 } from "./actual-prompt.ts";
+import { getAgentDir } from "./agent-dir.ts";
+import {
+	discoverPromptFile,
+	loadProjectContextFiles,
+	type PromptFileSource,
+} from "./prompt-files.ts";
 
 type TraceCtx = Pick<ExtensionContext, "cwd" | "getSystemPrompt" | "sessionManager">;
-
-type PromptScope = "project" | "user";
-
-type PromptFileSource = {
-	path: string;
-	scope: PromptScope;
-};
 
 type PromptToolSource = {
 	name: string;
@@ -69,91 +67,6 @@ type AfterProviderResponseLike = {
 	status: number;
 	headers: Record<string, string>;
 };
-
-function expandHome(path: string): string {
-	if (path === "~") return homedir();
-	if (path.startsWith("~/")) return join(homedir(), path.slice(2));
-	return path;
-}
-
-function getAgentDir(): string {
-	const envDir = process.env.PI_CODING_AGENT_DIR;
-	if (envDir) {
-		return expandHome(envDir);
-	}
-
-	return join(homedir(), ".pi", "agent");
-}
-
-function discoverPromptFile(
-	cwd: string,
-	agentDir: string,
-	name: "SYSTEM.md" | "APPEND_SYSTEM.md",
-): PromptFileSource | undefined {
-	const projectPath = join(cwd, ".pi", name);
-	if (existsSync(projectPath)) {
-		return { path: projectPath, scope: "project" };
-	}
-
-	const userPath = join(agentDir, name);
-	if (existsSync(userPath)) {
-		return { path: userPath, scope: "user" };
-	}
-
-	return undefined;
-}
-
-function loadContextFileFromDir(dir: string): { path: string; content: string } | undefined {
-	for (const name of ["AGENTS.md", "CLAUDE.md"]) {
-		const path = join(dir, name);
-		if (!existsSync(path)) {
-			continue;
-		}
-
-		return {
-			path,
-			content: readFileSync(path, "utf8"),
-		};
-	}
-
-	return undefined;
-}
-
-function loadProjectContextFiles(
-	cwd: string,
-	agentDir: string,
-): Array<{ path: string; content: string }> {
-	const files: Array<{ path: string; content: string }> = [];
-	const seen = new Set<string>();
-	const globalFile = loadContextFileFromDir(agentDir);
-	if (globalFile) {
-		files.push(globalFile);
-		seen.add(globalFile.path);
-	}
-
-	const ancestors: Array<{ path: string; content: string }> = [];
-	let current = cwd;
-	const root = resolve("/");
-	while (true) {
-		const file = loadContextFileFromDir(current);
-		if (file && !seen.has(file.path)) {
-			ancestors.unshift(file);
-			seen.add(file.path);
-		}
-		if (current === root) {
-			break;
-		}
-
-		const parent = resolve(current, "..");
-		if (parent === current) {
-			break;
-		}
-		current = parent;
-	}
-
-	files.push(...ancestors);
-	return files;
-}
 
 function getTracePath(
 	sessionFile: string | undefined,
