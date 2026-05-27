@@ -7,7 +7,7 @@ import type {
 	ExtensionContext,
 	SessionStartEvent,
 	TurnStartEvent,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 
 type NotifyType = "info" | "warning" | "error";
 

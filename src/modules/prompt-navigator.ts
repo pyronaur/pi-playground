@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename, join, relative, sep } from "node:path";
 
-import type { ExtensionAPI, ExtensionContext, ToolInfo } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, ToolInfo } from "@earendil-works/pi-coding-agent";
 import {
 	type Focusable,
 	Key,
@@ -10,7 +10,7 @@ import {
 	truncateToWidth,
 	type TUI,
 	visibleWidth,
-} from "@mariozechner/pi-tui";
+} from "@earendil-works/pi-tui";
 
 import { type ActualPromptCapture, readActualPrompt } from "./actual-prompt.ts";
 import { getAgentDir } from "./agent-dir.ts";

@@ -1,4 +1,4 @@
-import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 import type { PlaygroundSessionState } from "../models/playground-session-state.ts";
 import { getEditorPaddingX } from "../modules/editor-padding.ts";

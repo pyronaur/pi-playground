@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import {
 	type ExtensionContext,
 	type ToolInfo,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 
 import {
 	type ActualPromptCapture,

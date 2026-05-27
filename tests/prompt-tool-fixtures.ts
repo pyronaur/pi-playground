@@ -1,4 +1,4 @@
-import type { ToolInfo } from "@mariozechner/pi-coding-agent";
+import type { ToolInfo } from "@earendil-works/pi-coding-agent";
 
 function tool(name: string, description: string): ToolInfo {
 	return {

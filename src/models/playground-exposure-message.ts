@@ -1,4 +1,4 @@
-import type { SessionEntry } from "@mariozechner/pi-coding-agent";
+import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 
 export const PLAYGROUND_EXPOSURE_TYPE = "playground-exposure";
 const PLAYGROUND_RUNBOOK = "@docs/playground-mode.md";

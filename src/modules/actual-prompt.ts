@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-import type { BeforeProviderRequestEvent, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { BeforeProviderRequestEvent, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 export type ActualPromptCapture = {
 	content: string;
