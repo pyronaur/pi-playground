@@ -79,9 +79,11 @@ If Pi is running without a persisted session file, it falls back to `.pi/playgro
 - `leader` then `g` activates playground for current session
 - once active, `leader` then `g` then `p` opens prompt navigator overlay
 - once active, `leader` then `g` then `r` toggles provider request debugging
-- slash fallbacks mirror leader actions when `pi-leader` is absent: `/playground`, `/system-view`, `/system-prompt`, `/playground-toggle-request-logging`
+- slash fallbacks mirror leader actions when `pi-leader` is absent: `/playground`, `/system-view`, `/system-prompt`, `/playground-toggle-request-logging`, `/kitchen-sink`
+- `/kitchen-sink` opens a Playground Mode-gated UI preset library backed by real Pi TUI components and extension UI APIs
 - prompt navigator tabs: `System Prompt` shows the actual last sent prompt from provider payload capture when available, then the full live runtime prompt, then the source breakdown items; `Tools` shows active tool metadata
 - prompt navigator keys: `c` copies current text, `e` opens current text in the editor via `/tmp/pi-system/*.md`, `s` opens the source file in the editor when present, `o` reveals the source in Finder
+- kitchen sink presets: Modal Select Card, Inline Input Overlay, Search + Preview Overlay, Searchable Settings Panel, Leader Hint Bar, Draft Editor Modal, Multi-Step Wizard Card, Tree Action Overlay, Progress Action Card, Autocomplete Suggestion Popup, Ordered Multi-Select Reorder Panel, Overlay Focus-Cycling Workspace, Event-Fed Power Bar
 - `Playground` widget stays above the input box on the left while playground is active
 - request logging captures full pre-send provider payloads for Pi inspection
 - prompt tracing persists agent-readable prompt artifacts so the agent can inspect effective prompt, sent prompt, source inputs, and response metadata by reading files instead of relying on UI

@@ -9,6 +9,7 @@ import {
 	PLAYGROUND_STATE_TYPE,
 	PlaygroundSessionState,
 } from "../models/playground-session-state.ts";
+import { KitchenSink } from "../modules/kitchen-sink-open.ts";
 import { PromptNavigator } from "../modules/prompt-navigator.ts";
 import { capturePromptTrace, captureProviderResponse } from "../modules/prompt-trace.ts";
 import { RequestDebugger } from "../modules/request-debugger.ts";
@@ -45,6 +46,7 @@ function getExposureLines(message: PlaygroundExposureMessage): string[] {
 
 export function registerPlayground(pi: ExtensionAPI) {
 	const promptNavigator = new PromptNavigator(pi);
+	const kitchenSink = new KitchenSink();
 	const requestDebugger = new RequestDebugger();
 	let ctx: ExtensionContext | undefined;
 	let state = PlaygroundSessionState.inactive();
@@ -132,7 +134,10 @@ export function registerPlayground(pi: ExtensionAPI) {
 		return true;
 	}
 
-	async function openPromptNavigator(nextCtx: ExtensionContext | undefined): Promise<boolean> {
+	async function openPlaygroundUi(
+		nextCtx: ExtensionContext | undefined,
+		open: (ctx: ExtensionContext) => Promise<void>,
+	): Promise<boolean> {
 		if (!state.active) {
 			nextCtx?.ui.notify("Activate playground first with /playground", "warning");
 			return false;
@@ -142,8 +147,16 @@ export function registerPlayground(pi: ExtensionAPI) {
 			return false;
 		}
 
-		await promptNavigator.open(nextCtx);
+		await open(nextCtx);
 		return true;
+	}
+
+	async function openPromptNavigator(nextCtx: ExtensionContext | undefined): Promise<boolean> {
+		return openPlaygroundUi(nextCtx, (activeCtx) => promptNavigator.open(activeCtx));
+	}
+
+	async function openKitchenSink(nextCtx: ExtensionContext | undefined): Promise<boolean> {
+		return openPlaygroundUi(nextCtx, (activeCtx) => kitchenSink.open(activeCtx));
 	}
 
 	pi.registerCommand("playground", {
@@ -178,6 +191,14 @@ export function registerPlayground(pi: ExtensionAPI) {
 		},
 	});
 
+	pi.registerCommand("kitchen-sink", {
+		description: "Open the playground component-backed UI preset library",
+		handler: async (_args, nextCtx) => {
+			ctx = nextCtx;
+			await openKitchenSink(nextCtx);
+		},
+	});
+
 	function attachLeader(): void {
 		offLeader?.();
 		offLeader = pi.events.on("pi-leader", (event) => {
@@ -204,6 +225,13 @@ export function registerPlayground(pi: ExtensionAPI) {
 						label: getRequestLoggingLabel(state),
 						run: () => {
 							toggleRequestLogging();
+						},
+					},
+					{
+						key: "k",
+						label: "kitchen sink",
+						run: async () => {
+							await openKitchenSink(ctx);
 						},
 					},
 				]);

@@ -12,5 +12,5 @@
 - Runtime: extension entry stays minimal. Reusable debug helpers live in separate modules and are imported by the entry.
 - Playground control: leader actions must always have slash-command fallbacks so playground still works when `pi-leader` is absent.
 - Playground control: slash fallback names should mirror leader behavior. Current exception: prompt navigator uses `/system-view`.
-- Playground control: current fallback commands are `/playground`, `/system-view`, and `/playground-toggle-request-logging`.
+- Playground control: current fallback commands are `/playground`, `/system-view`, `/system-prompt`, `/playground-toggle-request-logging`, and `/kitchen-sink`.
 - Storage: keep debug traces out of LLM context. Prefer session-adjacent sidecar files for large wire payloads.

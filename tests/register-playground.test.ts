@@ -47,6 +47,16 @@ type RegisteredCommand = {
 	handler: (args: string, ctx: unknown) => Promise<void>;
 };
 
+const EXPECTED_KITCHEN_SINK_OVERLAY = {
+	overlay: true,
+	overlayOptions: {
+		anchor: "center",
+		width: "92%",
+		maxHeight: "88%",
+		margin: 1,
+	},
+};
+
 function createEvents() {
 	const handlers = new Map<string, Array<(event: unknown, ctx: unknown) => unknown>>();
 
@@ -443,6 +453,7 @@ void test("playground is inactive by default and exposes fallback slash commands
 	await harness.startSession();
 
 	assert.deepEqual([...harness.commands.keys()].sort(), [
+		"kitchen-sink",
 		"playground",
 		"playground-toggle-request-logging",
 		"system-prompt",
@@ -498,15 +509,7 @@ void test("slash command opens prompt navigator overlay when playground is activ
 	await harness.runCommand("system-view");
 
 	assert.equal(harness.customCalls.length, 1);
-	assert.deepEqual(harness.customCalls[0]?.options, {
-		overlay: true,
-		overlayOptions: {
-			anchor: "center",
-			width: "92%",
-			maxHeight: "88%",
-			margin: 1,
-		},
-	});
+	assert.deepEqual(harness.customCalls[0]?.options, EXPECTED_KITCHEN_SINK_OVERLAY);
 });
 
 void test("system-prompt command opens prompt navigator overlay when playground is active", async (t) => {
@@ -529,7 +532,7 @@ void test("active playground reopens as a leader submenu after session reload", 
 
 	const submenu = await openPlaygroundSubmenu(harness);
 	assert.equal(submenu?.kind, "playground");
-	assert.deepEqual(submenu?.items.map((item) => item.key), ["p", "r"]);
+	assert.deepEqual(submenu?.items.map((item) => item.key), ["p", "r", "k"]);
 });
 
 void test("active playground resume does not duplicate an existing exposure message", async (t) => {
@@ -719,6 +722,31 @@ void test("prompt navigator command warns when playground is inactive", async (t
 
 	await harness.startSession();
 	await harness.runCommand("system-view");
+
+	assert.equal(harness.customCalls.length, 0);
+	assert.equal(
+		harness.notifications.some((item) => /Activate playground first/.test(item.message)),
+		true,
+	);
+});
+
+void test("kitchen sink command opens component-backed preset library when playground is active", async (t) => {
+	const harness = createActiveHarness();
+	t.after(harness.cleanup);
+
+	await harness.startSession();
+	await harness.runCommand("kitchen-sink");
+
+	assert.equal(harness.customCalls.length, 1);
+	assert.deepEqual(harness.customCalls[0]?.options, EXPECTED_KITCHEN_SINK_OVERLAY);
+});
+
+void test("kitchen sink command warns when playground is inactive", async (t) => {
+	const harness = createHarness();
+	t.after(harness.cleanup);
+
+	await harness.startSession();
+	await harness.runCommand("kitchen-sink");
 
 	assert.equal(harness.customCalls.length, 0);
 	assert.equal(
