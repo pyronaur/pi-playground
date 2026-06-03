@@ -4,10 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
+import { visibleWidth } from "@earendil-works/pi-tui";
+
 import {
 	createPromptNavigatorData,
 	getExternalEditorCommandForTest,
 	getPromptNavigatorLayout,
+	PromptNavigatorComponent,
 	writePromptNavigatorTextFile,
 } from "../src/modules/prompt-navigator.ts";
 import { promptNavigatorTools, promptToolOptions } from "./prompt-tool-fixtures.ts";
@@ -139,6 +142,52 @@ void test("getPromptNavigatorLayout keeps split rows aligned to the popup frame"
 	assert.equal(layout.rowWidth, 120);
 	assert.equal(layout.contentPadding, 2);
 	assert.equal(layout.listWidth + layout.bodyWidth + 3, 120);
+});
+
+void test("prompt navigator render fits tab-indented prompt text inside width", () => {
+	const data = createPromptNavigatorData(
+		{
+			cwd: "/tmp/repo",
+			getSystemPrompt() {
+				return "live prompt";
+			},
+		},
+		{
+			actualPrompt: {
+				content: [
+					"- Keep answer tight: answer the question asked head on and stop:",
+					"\t- \"What is X?\" → definition. Stop.",
+					"\t- \"How does X work?\" → mechanism. Stop.",
+					"\t- \"Why X?\" → reason. Stop.",
+				].join("\n"),
+				source: "payload.instructions",
+			},
+		},
+	);
+	const component = new PromptNavigatorComponent(
+		{ requestRender() {} } as never,
+		{
+			fg(_color: string, value: string) {
+				return value;
+			},
+			bold(value: string) {
+				return value;
+			},
+		} as never,
+		data,
+		() => {},
+		async () => {},
+		async () => {},
+		async () => {},
+		async () => {},
+		2,
+	);
+
+	for (const width of [80, 120, 232, 252]) {
+		for (const line of component.render(width)) {
+			assert.ok(visibleWidth(line) <= width);
+		}
+	}
 });
 
 void test("writePromptNavigatorTextFile writes rendered text to a temp markdown file", () => {

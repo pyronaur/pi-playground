@@ -10,6 +10,7 @@ import {
 	truncateToWidth,
 	type TUI,
 	visibleWidth,
+	wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
 
 import { type ActualPromptCapture, readActualPrompt } from "./actual-prompt.ts";
@@ -108,28 +109,6 @@ function getVisibleWindow(total: number, selected: number, limit: number): [numb
 	let end = Math.min(total, start + limit);
 	start = Math.max(0, end - limit);
 	return [start, end];
-}
-
-function wrapLine(text: string, width: number): string[] {
-	if (width <= 1) {
-		return [text];
-	}
-	if (text.length === 0) {
-		return [""];
-	}
-
-	const lines: string[] = [];
-	let remaining = text;
-	while (remaining.length > width) {
-		lines.push(remaining.slice(0, width));
-		remaining = remaining.slice(width);
-	}
-	lines.push(remaining);
-	return lines;
-}
-
-function wrapText(text: string, width: number): string[] {
-	return text.split("\n").flatMap((line) => wrapLine(line, width));
 }
 
 function extractFooter(fullPrompt: string): string | undefined {
@@ -364,7 +343,7 @@ export function getExternalEditorCommandForTest(
 	return getEditorCommandFromEnv(env);
 }
 
-class PromptNavigatorComponent implements Focusable {
+export class PromptNavigatorComponent implements Focusable {
 	focused = false;
 	private tab: NavigatorTab = "system";
 	private systemIndex = 0;
@@ -475,7 +454,7 @@ class PromptNavigatorComponent implements Focusable {
 		}
 
 		const bodyWidth = 56;
-		const totalLines = wrapText(item.content, bodyWidth).length;
+		const totalLines = wrapTextWithAnsi(item.content, bodyWidth).length;
 		const maxScroll = Math.max(0, totalLines - MAX_BODY_LINES);
 		const next = Math.max(0, Math.min(maxScroll, this.scroll + delta));
 		if (next === this.scroll) {
@@ -612,7 +591,9 @@ class PromptNavigatorComponent implements Focusable {
 		const selected = this.selectedItem;
 		const [listStart, listEnd] = getVisibleWindow(items.length, this.selectedIndex, MAX_LIST_LINES);
 		const visibleItems = items.slice(listStart, listEnd);
-		const bodyLines = selected ? wrapText(selected.content, bodyContentWidth) : ["No content."];
+		const bodyLines = selected
+			? wrapTextWithAnsi(selected.content, bodyContentWidth)
+			: ["No content."];
 		const maxScroll = Math.max(0, bodyLines.length - MAX_BODY_LINES);
 		const scroll = Math.max(0, Math.min(maxScroll, this.scroll));
 		this.scroll = scroll;
