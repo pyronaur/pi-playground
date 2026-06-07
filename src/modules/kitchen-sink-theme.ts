@@ -9,7 +9,7 @@ function selectListTheme(theme: Theme): SelectListTheme {
 		selectedText: (value) => theme.fg("accent", value),
 		description: (value) => theme.fg("muted", value),
 		scrollInfo: (value) => theme.fg("dim", value),
-		noMatch: (value) => theme.fg("warning", value),
+		noMatch: () => theme.fg("warning", "  No matching items"),
 	};
 }
 

@@ -117,3 +117,17 @@ void test("kitchen sink gallery renders a full framed surface", () => {
 	assert.match(lines.at(-1) ?? "", /^╰/);
 	assertLinesFit(lines, 96);
 });
+
+void test("kitchen sink gallery filters catalog search and opens selected result", () => {
+	const harness = createGallery();
+
+	harness.gallery.handleInput("wizard");
+	const filtered = harness.gallery.render(96).join("\n");
+	assert.match(filtered, /Multi-Step Wizard Card/);
+	assert.doesNotMatch(filtered, /Modal Select Card/);
+
+	harness.gallery.handleInput("\r");
+	const preview = harness.gallery.render(96).join("\n");
+	assert.match(preview, /Multi-Step Wizard Card/);
+	assert.match(preview, /Tabbed steps, option rows, and inline custom-answer mode/);
+});
