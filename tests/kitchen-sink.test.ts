@@ -13,6 +13,9 @@ function createTheme() {
 		fg(_color: string, value: string) {
 			return value;
 		},
+		bg(_color: string, value: string) {
+			return value;
+		},
 		bold(value: string) {
 			return value;
 		},
@@ -103,4 +106,14 @@ void test("kitchen sink gallery can enter and close every registered preset", ()
 		assert.equal(harness.isClosed(), true);
 		assert.ok(harness.renderCount() > 0);
 	}
+});
+
+void test("kitchen sink gallery renders a full framed surface", () => {
+	const harness = createGallery();
+	const lines = harness.gallery.render(96);
+
+	assert.equal(lines.length, 40);
+	assert.match(lines[0] ?? "", /^╭ Kitchen Sink /);
+	assert.match(lines.at(-1) ?? "", /^╰/);
+	assertLinesFit(lines, 96);
 });

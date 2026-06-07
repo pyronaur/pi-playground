@@ -47,13 +47,23 @@ type RegisteredCommand = {
 	handler: (args: string, ctx: unknown) => Promise<void>;
 };
 
-const EXPECTED_KITCHEN_SINK_OVERLAY = {
+const EXPECTED_PROMPT_NAVIGATOR_OVERLAY = {
 	overlay: true,
 	overlayOptions: {
 		anchor: "center",
 		width: "92%",
 		maxHeight: "88%",
 		margin: 1,
+	},
+};
+
+const EXPECTED_KITCHEN_SINK_OVERLAY = {
+	overlay: true,
+	overlayOptions: {
+		anchor: "center",
+		width: "100%",
+		maxHeight: "100%",
+		margin: 0,
 	},
 };
 
@@ -509,7 +519,7 @@ void test("slash command opens prompt navigator overlay when playground is activ
 	await harness.runCommand("system-view");
 
 	assert.equal(harness.customCalls.length, 1);
-	assert.deepEqual(harness.customCalls[0]?.options, EXPECTED_KITCHEN_SINK_OVERLAY);
+	assert.deepEqual(harness.customCalls[0]?.options, EXPECTED_PROMPT_NAVIGATOR_OVERLAY);
 });
 
 void test("system-prompt command opens prompt navigator overlay when playground is active", async (t) => {

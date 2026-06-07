@@ -5,7 +5,9 @@ import {
 	Key,
 	matchesKey,
 	SelectList,
+	truncateToWidth,
 	type TUI,
+	visibleWidth,
 } from "@earendil-works/pi-tui";
 
 import {
@@ -30,6 +32,10 @@ function selectedPreset(index: number): Preset {
 		source: "none",
 		use: "none",
 	};
+}
+
+function pad(value: string, width: number): string {
+	return value + " ".repeat(Math.max(0, width - visibleWidth(value)));
 }
 
 export class KitchenSinkGallery implements Component, Focusable {
@@ -84,6 +90,13 @@ export class KitchenSinkGallery implements Component, Focusable {
 	}
 
 	render(width: number): string[] {
+		const safeWidth = Math.max(12, width);
+		const contentWidth = Math.max(1, safeWidth - 4);
+		const content = this.renderContent(contentWidth);
+		return this.renderFrame(content, safeWidth);
+	}
+
+	private renderContent(width: number): string[] {
 		if (!this.activeDemo || !this.activePreset) {
 			const preset = selectedPreset(this.catalogIndex);
 			return [
@@ -116,6 +129,37 @@ export class KitchenSinkGallery implements Component, Focusable {
 
 	dispose(): void {
 		this.activeDemo?.dispose?.();
+	}
+
+	private renderFrame(content: string[], width: number): string[] {
+		const innerWidth = Math.max(1, width - 2);
+		const contentWidth = Math.max(1, width - 4);
+		const body = ["", ...content, ""];
+		const bodyLimit = Math.max(1, this.tui.terminal.rows - 2);
+		const visibleBody = body.length > bodyLimit
+			? [...body.slice(0, Math.max(0, bodyLimit - 1)), this.theme.fg("dim", "…")]
+			: body;
+		const rows = [...visibleBody];
+		while (rows.length < bodyLimit) rows.push("");
+
+		const border = (value: string) => this.theme.fg("dim", value);
+		const title = truncateToWidth(" Kitchen Sink ", innerWidth, "…", true);
+		const titleRule = "─".repeat(Math.max(0, innerWidth - visibleWidth(title)));
+		const top = border("╭") + this.theme.fg("accent", title) + border(`${titleRule}╮`);
+		const bottom = border(`╰${"─".repeat(innerWidth)}╯`);
+
+		return [
+			this.paint(top, width),
+			...rows.map((line) => {
+				const text = truncateToWidth(line, contentWidth, "…", true);
+				return this.paint(`${border("│")} ${pad(text, contentWidth)} ${border("│")}`, width);
+			}),
+			this.paint(bottom, width),
+		];
+	}
+
+	private paint(line: string, width: number): string {
+		return this.theme.bg("customMessageBg", pad(line, width));
 	}
 
 	private handleCatalogInput(data: string): void {

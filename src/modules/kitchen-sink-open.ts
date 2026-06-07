@@ -12,9 +12,9 @@ export class KitchenSink {
 				overlay: true,
 				overlayOptions: {
 					anchor: "center",
-					width: "92%",
-					maxHeight: "88%",
-					margin: 1,
+					width: "100%",
+					maxHeight: "100%",
+					margin: 0,
 				},
 			},
 		);
