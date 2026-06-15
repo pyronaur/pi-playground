@@ -5,10 +5,6 @@ import { join } from "node:path";
 import test from "node:test";
 
 import register from "../src/index.ts";
-import {
-	PLAYGROUND_EXPOSURE_TYPE,
-	PlaygroundExposureMessage,
-} from "../src/models/playground-exposure-message.ts";
 import { PLAYGROUND_STATE_TYPE } from "../src/models/playground-session-state.ts";
 import { getPromptTracePaths } from "../src/modules/prompt-trace.ts";
 
@@ -319,28 +315,10 @@ function createHarness(options?: {
 	};
 }
 
-function getExposureMessages(entries: Entry[]) {
+function getCustomMessages(entries: Entry[]) {
 	return entries.filter((entry): entry is Extract<Entry, { type: "custom_message" }> => {
-		return entry.type === "custom_message" && entry.customType === PLAYGROUND_EXPOSURE_TYPE;
+		return entry.type === "custom_message";
 	});
-}
-
-function renderMessageText(
-	renderer: (
-		message: any,
-		options: { expanded: boolean },
-		theme: any,
-	) => { render: (width: number) => string[] },
-	message: { content: string; details: unknown },
-	expanded = false,
-) {
-	return renderer(message, { expanded }, {
-		fg: (_color: string, text: string) => text,
-		bg: (_color: string, text: string) => text,
-		bold: (text: string) => text,
-	}).render(120)
-		.map((line) => line.trim())
-		.filter((line) => line.length > 0);
 }
 
 function getLatestState(entries: Entry[]) {
@@ -360,82 +338,16 @@ function activeStateEntry(id: string): Entry {
 	};
 }
 
-function exposureEntry(id: string, exposure: PlaygroundExposureMessage): Entry {
-	const message = exposure.toMessage();
-	return {
-		type: "custom_message",
-		id,
-		customType: message.customType,
-		content: message.content,
-		display: message.display,
-		details: message.details,
-	};
-}
-
-function activeEntries(...exposures: PlaygroundExposureMessage[]): Entry[] {
+function activeEntries(): Entry[] {
 	return [
 		{ type: "header", id: "0" },
 		activeStateEntry("1"),
-		...exposures.map((exposure, index) => exposureEntry(String(index + 2), exposure)),
 	];
 }
 
 function createActiveHarness() {
 	return createHarness({
 		entries: activeEntries(),
-	});
-}
-
-function createActiveHarnessWithExposure() {
-	const sessionFile = "/tmp/current/session.jsonl";
-	const exposure = PlaygroundExposureMessage.create({
-		compactionId: "root",
-		sessionId: "session-123",
-		sessionFile,
-	});
-
-	return createHarness({ sessionFile, entries: activeEntries(exposure) });
-}
-
-function createForkedHarnessWithOldExposure() {
-	const previousSessionFile = "/tmp/previous/session.jsonl";
-	const exposure = PlaygroundExposureMessage.create({
-		compactionId: "root",
-		sessionId: "old-session-id",
-		sessionFile: previousSessionFile,
-	});
-
-	return createHarness({
-		sessionId: "new-session-id",
-		sessionFile: "/tmp/current/session.jsonl",
-		sessionStart: { reason: "fork", previousSessionFile },
-		entries: activeEntries(exposure),
-	});
-}
-
-function createTreeNavigationHarness() {
-	const staleExposure = PlaygroundExposureMessage.create({
-		compactionId: "root",
-		sessionId: "old-session-id",
-		sessionFile: "/tmp/old/session.jsonl",
-	});
-	const currentExposure = PlaygroundExposureMessage.create({
-		compactionId: "root",
-		sessionId: "current-session-id",
-		sessionFile: "/tmp/current/session.jsonl",
-	});
-	const entries: Entry[] = [
-		{ type: "header", id: "0" },
-		activeStateEntry("1"),
-		exposureEntry("2", staleExposure),
-		exposureEntry("3", currentExposure),
-	];
-
-	return createHarness({
-		entries,
-		sessionId: "current-session-id",
-		sessionFile: "/tmp/current/session.jsonl",
-		currentBranch: entries.slice(1),
 	});
 }
 
@@ -545,48 +457,18 @@ void test("active playground reopens as a leader submenu after session reload", 
 	assert.deepEqual(submenu?.items.map((item) => item.key), ["p", "r", "k"]);
 });
 
-void test("active playground resume does not duplicate an existing exposure message", async (t) => {
-	const harness = createActiveHarnessWithExposure();
+void test("active playground resume keeps transcript messages unchanged", async (t) => {
+	const harness = createActiveHarness();
 	t.after(harness.cleanup);
 
+	const entryCount = harness.entries.length;
 	await harness.startSession();
 
-	assert.equal(getExposureMessages(harness.entries).length, 1);
+	assert.equal(harness.entries.length, entryCount);
+	assert.equal(getCustomMessages(harness.entries).length, 0);
 });
 
-void test("forked active session injects a new exposure message when the session id changes", async (t) => {
-	const harness = createForkedHarnessWithOldExposure();
-	t.after(harness.cleanup);
-
-	await harness.startSession();
-
-	const exposures = getExposureMessages(harness.entries);
-	assert.equal(exposures.length, 2);
-	assert.match(exposures.at(-1)?.content ?? "", /new-session-id/);
-	assert.match(exposures.at(-1)?.content ?? "", /\/tmp\/current\/session\.jsonl/);
-});
-
-void test("tree navigation injects the current session exposure on the new branch", async (t) => {
-	const harness = createTreeNavigationHarness();
-	t.after(harness.cleanup);
-
-	await harness.startSession();
-	assert.equal(getExposureMessages(harness.entries).length, 2);
-
-	harness.setBranch(harness.entries.filter((entry) => entry.id === "1" || entry.id === "2"));
-	await harness.emit("session_tree", {
-		type: "session_tree",
-		newLeafId: "1",
-		oldLeafId: "3",
-	});
-
-	const exposures = getExposureMessages(harness.entries);
-	assert.equal(exposures.length, 3);
-	assert.match(exposures.at(-1)?.content ?? "", /current-session-id/);
-	assert.match(exposures.at(-1)?.content ?? "", /\/tmp\/current\/session\.jsonl/);
-});
-
-void test("activating playground injects one visible exposure message with session metadata", async (t) => {
+void test("activating playground persists state without transcript messages", async (t) => {
 	const harness = createHarness();
 	t.after(harness.cleanup);
 
@@ -599,22 +481,18 @@ void test("activating playground injects one visible exposure message with sessi
 		},
 	});
 
-	const exposures = getExposureMessages(harness.entries);
-	assert.equal(exposures.length, 1);
-	assert.equal(exposures[0]?.display, true);
-	assert.match(exposures[0]?.content ?? "", /session-123/);
-	assert.match(exposures[0]?.content ?? "", /session\.jsonl/);
-	assert.match(exposures[0]?.content ?? "", /@docs\/playground-mode\.md/);
-	assert.equal(harness.renderers.has(PLAYGROUND_EXPOSURE_TYPE), true);
+	assert.deepEqual(getLatestState(harness.entries)?.data, {
+		active: true,
+		requestLogging: false,
+	});
+	assert.equal(getCustomMessages(harness.entries).length, 0);
 });
 
-void test("active playground re-injects once after compaction", async (t) => {
+void test("active playground branch events keep transcript messages unchanged", async (t) => {
 	const harness = createActiveHarness();
 	t.after(harness.cleanup);
 
 	await harness.startSession();
-
-	assert.equal(getExposureMessages(harness.entries).length, 1);
 
 	harness.entries.push({
 		type: "compaction",
@@ -631,44 +509,13 @@ void test("active playground re-injects once after compaction", async (t) => {
 		fromExtension: false,
 	});
 
-	assert.equal(getExposureMessages(harness.entries).length, 2);
-	await harness.emit("session_compact", {
-		type: "session_compact",
-		compactionEntry: harness.entries.at(-2),
-		fromExtension: false,
+	await harness.emit("session_tree", {
+		type: "session_tree",
+		newLeafId: "1",
+		oldLeafId: "0",
 	});
-	assert.equal(getExposureMessages(harness.entries).length, 2);
-});
 
-void test("exposure message renderer collapses to 3 lines and expands to the full body", async (t) => {
-	const harness = createHarness();
-	t.after(harness.cleanup);
-
-	await harness.startSession();
-
-	const renderer = harness.renderers.get(PLAYGROUND_EXPOSURE_TYPE);
-	assert.equal(typeof renderer, "function");
-
-	const exposure = PlaygroundExposureMessage.create({
-		compactionId: "root",
-		sessionId: "session-123",
-		sessionFile: join(harness.cwd, "session.jsonl"),
-	});
-	const collapsed = renderMessageText(renderer as never, exposure.toMessage());
-	const expanded = renderMessageText(renderer as never, exposure.toMessage(), true);
-
-	assert.deepEqual(collapsed, [
-		"Playground session context",
-		"Session ID: session-123",
-		`Session file: ${join(harness.cwd, "session.jsonl")}`,
-		"...",
-	]);
-	assert.deepEqual(expanded, [
-		"Playground session context",
-		"Session ID: session-123",
-		`Session file: ${join(harness.cwd, "session.jsonl")}`,
-		"Runbook: @docs/playground-mode.md",
-	]);
+	assert.equal(getCustomMessages(harness.entries).length, 0);
 });
 
 void test("request logging toggle persists in session state and writes sidecar logs", async (t) => {
